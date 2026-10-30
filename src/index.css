@@ -1,0 +1,140 @@
+@import "tailwindcss";
+
+/* Paleta "Slab": gris frio, tinta negra, rojo laca solo para lo que importa. */
+@theme {
+  --font-sans: "Archivo", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Fraunces", ui-serif, Georgia, serif;
+
+  --color-ground: #f1f2f4;
+  --color-surface: #ffffff;
+  --color-ink: #0e0f11;
+  --color-ink-2: #1b1d21;
+  --color-muted: #6b7078;
+  --color-faint: #9aa0a8;
+  --color-line: #e2e4e8;
+  --color-line-2: #eceef1;
+  --color-red: #d7261e;
+  --color-red-soft: #fdecea;
+  --color-ok: #0f7b4e;
+  --color-ok-soft: #e4f4ec;
+  --color-warn: #a86a08;
+  --color-warn-soft: #fbf0db;
+
+  --shadow-card: 0 1px 0 rgb(14 15 17 / 0.03), 0 8px 24px -12px rgb(14 15 17 / 0.12);
+  --shadow-pop: 0 24px 60px -20px rgb(14 15 17 / 0.35);
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-ground);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+.num {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+.display {
+  font-family: var(--font-display);
+  letter-spacing: -0.02em;
+}
+
+/* Barras de scroll discretas */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #c9ccd2 transparent;
+}
+
+/* Punto "en vivo" */
+@keyframes live-ping {
+  0% {
+    transform: scale(1);
+    opacity: 0.7;
+  }
+  80%,
+  100% {
+    transform: scale(2.6);
+    opacity: 0;
+  }
+}
+.live-dot::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  background: currentColor;
+  animation: live-ping 1.8s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+@keyframes shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  background: var(--color-line-2);
+  border-radius: 12px;
+}
+.skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.7), transparent);
+  animation: shimmer 1.4s infinite;
+}
+
+/* Ventana de detalle */
+@keyframes ov-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes ov-out { from { opacity: 1; } to { opacity: 0; } }
+@keyframes sheet-in { from { opacity: 0; transform: translateY(18px) scale(0.985); } to { opacity: 1; transform: none; } }
+@keyframes sheet-out { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateY(10px) scale(0.99); } }
+.ov[data-state="open"] { animation: ov-in 0.18s ease-out; }
+.ov[data-state="closed"] { animation: ov-out 0.14s ease-in forwards; }
+.sheet[data-state="open"] { animation: sheet-in 0.24s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.sheet[data-state="closed"] { animation: sheet-out 0.14s ease-in forwards; }
+
+@media (prefers-reduced-motion: reduce) {
+  .live-dot::after,
+  .skeleton::after,
+  .ov,
+  .sheet {
+    animation: none !important;
+  }
+}
+
+/* El PDF y la impresion no deben mostrar controles */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+}
+
+/* Los hijos de una cuadricula pueden encogerse: un texto largo no debe ensanchar la columna. */
+.grid > * {
+  min-width: 0;
+}
+
+/* En el celular los campos de 16 px evitan que el navegador haga zoom al tocarlos */
+@media (max-width: 639px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
+
+.sin-barra { scrollbar-width: none; }
+.sin-barra::-webkit-scrollbar { display: none; }

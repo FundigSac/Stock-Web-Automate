@@ -1,0 +1,15 @@
+node_modules
+dist
+*.tsbuildinfo
+
+# Variables de entorno (las claves nunca se suben)
+.env*
+!.env.example
+
+.vercel
+.claude
+addin-clave.txt
+
+# Copias de datos y archivos de prueba locales
+respaldo-*.json
+prueba-*.png
