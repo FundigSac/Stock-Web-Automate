@@ -262,10 +262,10 @@ describe("archivos que no se ejecutan en estas pruebas", () => {
     expect(f).not.toMatch(/sort\(\(a, b\) => b\.created_at\.localeCompare/);
   });
 
-  it("las tipografías van con la app y quedan guardadas para abrir sin red", () => {
+  it("la fuente es la del sistema: no se descarga y abre igual sin red", () => {
     expect(leer("index.html")).not.toMatch(/fonts\.googleapis/);
-    expect(leer("vite.config.ts")).toMatch(/woff2/);
-    expect(leer("src/main.tsx")).toMatch(/@fontsource\/archivo/);
+    expect(leer("src/main.tsx")).not.toMatch(/@fontsource/);
+    expect(leer("src/index.css")).toMatch(/--font-sans: system-ui/);
   });
 
   it("todo el texto corrido va justificado", () => {

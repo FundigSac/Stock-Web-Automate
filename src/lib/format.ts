@@ -117,6 +117,12 @@ export function etiquetaTalla(talla: string | null | undefined): string {
   return n === "Única" || n === "Especial" ? `Talla ${n.toLowerCase()}` : `Talla ${n}`;
 }
 
+/** La misma frase en medio de un texto, sin bajar la talla a minúsculas: "talla M", "talla única", "sin talla". */
+export function tallaEnFrase(talla: string | null | undefined): string {
+  const e = etiquetaTalla(talla);
+  return e.charAt(0).toLowerCase() + e.slice(1);
+}
+
 /** Los movimientos guardan "NOMBRE  ·  Talla M": lo separa en nombre y talla. */
 export function partirMovimiento(snapshot: string | null | undefined): { nombre: string; talla: string } {
   const [nombre, talla] = (snapshot ?? "").split(/\s+·\s+Talla\s+/i);

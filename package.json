@@ -12,12 +12,9 @@
     "typecheck": "tsc --noEmit && tsc -p tests/tsconfig.json"
   },
   "dependencies": {
-    "@fontsource/archivo": "5.3.0",
-    "@fontsource/fraunces": "5.3.0",
     "@radix-ui/react-dialog": "^1.1.2",
     "@supabase/supabase-js": "^2.45.0",
     "clsx": "^2.1.1",
-    "framer-motion": "^11.11.0",
     "idb": "8.0.4",
     "jspdf": "^2.5.2",
     "jspdf-autotable": "^3.8.4",

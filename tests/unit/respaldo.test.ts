@@ -1,6 +1,7 @@
 import { IDBFactory } from "fake-indexeddb";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { estadoConexion } from "../../src/components/EstadoRed";
+import { estadoBanda } from "../../src/components/BandaEstado";
+import { estadoPorSubir } from "../../src/components/estadoPorSubir";
 import { cerrarAlmacen, type ItemRespaldo } from "../../src/lib/offline/almacen";
 import { ErrorSubida, esperaReintento, sincronizar, type CargaRegistro, type RespuestaRegistro, type Transporte } from "../../src/lib/offline/motor";
 import { conProvisional } from "../../src/lib/offline/provisional";
@@ -361,20 +362,47 @@ describe("respuestas del servidor", () => {
 });
 
 describe("frase de estado", () => {
-  const base = { enLinea: true, subiendo: false, porSubir: 0, sinMigracion: 0, porRevisar: 0, errorDatos: false, tiempoReal: true, edad: 1, ultimaCarga: Date.now(), ahora: Date.now() };
+  const base = { enLinea: true, subiendo: false, porSubir: 0, porRevisar: 0, edad: 1, ultimaCarga: Date.now() };
 
   it("dice cuánto falta cuando no hay conexión", () => {
-    expect(estadoConexion({ ...base, enLinea: false, porSubir: 3 }).texto).toBe("Sin conexión, 3 por subir");
-    expect(estadoConexion({ ...base, enLinea: false }).texto).toBe("Sin conexión");
+    expect(estadoBanda({ ...base, enLinea: false, porSubir: 3 }).texto).toBe("Sin conexión · 3 por subir");
+    expect(estadoBanda({ ...base, enLinea: false }).texto).toBe("Sin conexión · Puedes seguir registrando");
   });
 
-  it("con conexión pasa por subiendo, por subir y en vivo", () => {
-    expect(estadoConexion({ ...base, subiendo: true, porSubir: 2 }).texto).toBe("Subiendo 2…");
-    expect(estadoConexion({ ...base, porSubir: 2 }).texto).toBe("2 por subir");
-    expect(estadoConexion(base).texto).toBe("En vivo");
+  it("con conexión pasa por subiendo, por subir y en línea", () => {
+    expect(estadoBanda({ ...base, subiendo: true, porSubir: 2 }).texto).toBe("Subiendo 2…");
+    expect(estadoBanda({ ...base, porSubir: 2 }).texto).toBe("2 por subir · Subir ahora");
+    expect(estadoBanda(base).texto).toBe("En línea · Todo subido");
   });
 
-  it("avisa si falta la actualización del servidor", () => {
-    expect(estadoConexion({ ...base, porSubir: 1, sinMigracion: 1 }).texto).toBe("1 esperando al servidor");
+  it("lo que espera la actualización del servidor sigue contando como por subir", () => {
+    expect(estadoBanda({ ...base, porSubir: 1 }).texto).toBe("1 por subir · Subir ahora");
+  });
+
+  it("aplica el primer caso que coincide", () => {
+    expect(estadoBanda({ ...base, porRevisar: 1, porSubir: 4, enLinea: false }).texto).toBe("1 por revisar");
+    expect(estadoBanda({ ...base, enLinea: false, porSubir: 2, subiendo: true }).texto).toBe("Sin conexión · 2 por subir");
+    expect(estadoBanda({ ...base, subiendo: true }).texto).toBe("En línea · Todo subido");
+  });
+
+  it("cada estado lleva su color e icono de la tabla", () => {
+    expect(estadoBanda({ ...base, porRevisar: 1 }).tono).toBe("revisar");
+    expect(estadoBanda({ ...base, enLinea: false }).tono).toBe("sin-red");
+    expect(estadoBanda({ ...base, porSubir: 1 }).tono).toBe("subir");
+    expect(estadoBanda(base).tono).toBe("ok");
+  });
+
+  it("sin una lectura reciente no dice que hay conexión", () => {
+    expect(estadoBanda({ ...base, edad: 91 }).texto).toBe("Conectando…");
+    expect(estadoBanda({ ...base, edad: 91, porSubir: 2 }).texto).toBe("2 por subir · Subir ahora");
+  });
+
+  it("la fila de un pendiente no contradice a la banda", () => {
+    // Con red la banda dice "1 por subir · Subir ahora": la fila no puede decir "Esperando conexión".
+    expect(estadoBanda({ ...base, porSubir: 1 }).texto).toBe("1 por subir · Subir ahora");
+    expect(estadoPorSubir({ estado: "pendiente" }, false, true).texto).toBe("Por subir");
+    expect(estadoPorSubir({ estado: "subiendo" }, false, true).texto).toBe("Por subir");
+    expect(estadoPorSubir({ estado: "pendiente" }, false, false).texto).toBe("Esperando conexión");
+    expect(estadoPorSubir({ estado: "subiendo" }, true, true).texto).toBe("Subiendo");
   });
 });

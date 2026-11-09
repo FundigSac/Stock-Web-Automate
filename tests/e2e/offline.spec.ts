@@ -80,11 +80,12 @@ class SupabaseFalso {
   }
 }
 
+const irAMas = (page: Page) => page.getByRole("navigation", { name: "Secciones" }).filter({ visible: true }).getByRole("button", { name: /Más/ }).click();
 const estado = (page: Page, texto: string | RegExp) => page.getByRole("status").filter({ hasText: texto }).filter({ visible: true });
 
 async function abrirConServiceWorker(page: Page) {
   await page.goto("/");
-  await expect(estado(page, /En vivo|Conectado/)).toBeVisible();
+  await expect(estado(page, /En línea/)).toBeVisible();
   await page.evaluate(async () => {
     await navigator.serviceWorker.ready;
     if (!navigator.serviceWorker.controller) {
@@ -109,17 +110,20 @@ async function abrirConServiceWorker(page: Page) {
 }
 
 async function registrarSalidaConFoto(page: Page) {
-  await page.getByRole("button", { name: "Registrar", exact: true }).filter({ visible: true }).first().click();
+  await page.getByRole("button", { name: "Entregar a un trabajador" }).click();
   const v = page.getByRole("dialog");
-  await v.locator("#reg-autor").fill("Cristhian");
-  await v.getByRole("tab", { name: /Salida/ }).click();
   await v.locator("#reg-quien").fill("diego");
   await v.getByRole("button", { name: /Diego Soto/ }).click();
+  await v.getByRole("button", { name: "Siguiente" }).click();
   await v.getByRole("button", { name: /Polo Azul/ }).click();
   await v.getByRole("button", { name: "Agregar una unidad (Talla M)" }).click();
+  await v.getByRole("button", { name: "Siguiente" }).click();
   await page.locator("#foto-camara").setInputFiles({ name: "foto.png", mimeType: "image/png", buffer: FOTO });
   await expect(v.getByAltText("Foto de la entrega")).toBeVisible();
+  await v.getByRole("button", { name: "Siguiente" }).click();
+  await v.locator("#reg-autor").fill("Cristhian");
   await v.getByRole("button", { name: "Guardar", exact: true }).click();
+  await v.getByRole("button", { name: "Ir al inicio" }).click();
   await expect(v).toBeHidden();
 }
 
@@ -139,26 +143,26 @@ test("sin conexión: registra con foto, sobrevive a recargar y sube con la hora 
   await expect(estado(page, /^Sin conexión/)).toBeVisible();
 
   await registrarSalidaConFoto(page);
-  await expect(estado(page, "Sin conexión, 1 por subir")).toBeVisible();
+  await expect(estado(page, "Sin conexión · 1 por subir")).toBeVisible();
   expect(sb.llamadasRegistro).toHaveLength(0);
 
   // Las cifras incluyen lo que falta subir, y se dice que son provisionales.
-  await expect(page.getByTestId("aviso-provisional")).toContainText("Cifras provisionales");
   await page.getByRole("navigation", { name: "Secciones" }).filter({ visible: true }).getByRole("button", { name: "Stock" }).click();
+  await expect(page.getByTestId("aviso-provisional")).toContainText("Cifras provisionales");
   await expect(page.getByText("9", { exact: true }).first()).toBeVisible();
 
   // Recarga en frío, sin red: la app, la copia y la cola siguen ahí.
   await page.reload();
-  await expect(estado(page, "Sin conexión, 1 por subir")).toBeVisible();
+  await expect(estado(page, "Sin conexión · 1 por subir")).toBeVisible();
 
   // Otra pestaña abierta desde cero, también sin red.
   const otra = await context.newPage();
   await otra.goto("/");
-  await expect(estado(otra, "Sin conexión, 1 por subir")).toBeVisible();
+  await expect(estado(otra, "Sin conexión · 1 por subir")).toBeVisible();
   await otra.close();
 
   // La pantalla de respaldo muestra la hora original.
-  await page.getByRole("navigation", { name: "Secciones" }).filter({ visible: true }).getByRole("button", { name: /Respaldo/ }).click();
+  await page.getByRole("navigation", { name: "Secciones" }).filter({ visible: true }).getByRole("button", { name: /Por subir/ }).click();
   await expect(page.getByText("08/11/2026")).toBeVisible();
   await expect(page.getByText("09:30", { exact: true })).toBeVisible();
   await expect(page.getByAltText("Foto guardada")).toBeVisible();
@@ -193,11 +197,11 @@ test("un reintento no duplica aunque se pierda la respuesta del servidor", async
 
   // El servidor ya tiene la fila, pero el dispositivo no se enteró.
   await expect.poll(() => sb.filas.size).toBe(1);
-  await expect(estado(page, /por subir|Sin conexión, 1/)).toBeVisible();
+  await expect(estado(page, /por subir/)).toBeVisible();
   expect(sb.llamadasRegistro).toHaveLength(1);
 
-  await page.getByRole("navigation", { name: "Secciones" }).filter({ visible: true }).getByRole("button", { name: /Respaldo/ }).click();
-  await page.getByRole("button", { name: "Subir ahora" }).click();
+  await page.getByRole("navigation", { name: "Secciones" }).filter({ visible: true }).getByRole("button", { name: /Por subir/ }).click();
+  await page.getByRole("button", { name: "Subir ahora", exact: true }).click();
 
   await expect(page.getByText("Subido", { exact: true })).toBeVisible();
   expect(sb.llamadasRegistro).toHaveLength(2);
@@ -215,14 +219,14 @@ test("sin la migración el registro se queda en cola y lo dice", async ({ contex
   await abrirConServiceWorker(page);
 
   await registrarSalidaConFoto(page);
-  await expect(estado(page, "1 esperando al servidor")).toBeVisible();
+  await expect(estado(page, "1 por subir")).toBeVisible();
 
-  await page.getByRole("navigation", { name: "Secciones" }).filter({ visible: true }).getByRole("button", { name: /Respaldo/ }).click();
-  await expect(page.getByText("Esperando al servidor", { exact: true })).toBeVisible();
+  await page.getByRole("navigation", { name: "Secciones" }).filter({ visible: true }).getByRole("button", { name: /Por subir/ }).click();
+  await expect(page.getByText("Esperando actualización del sistema", { exact: true })).toBeVisible();
   await expect(page.getByText(/todavía no tiene la actualización/)).toBeVisible();
 
   sb.sinMigracion = false;
-  await page.getByRole("button", { name: "Subir ahora" }).click();
+  await page.getByRole("button", { name: "Subir ahora", exact: true }).click();
   await expect(page.getByText("Subido", { exact: true })).toBeVisible();
   expect(sb.filas.size).toBe(1);
 });
@@ -242,6 +246,7 @@ test("sin red no se cierra la sesión aunque el token haya vencido", async ({ co
   await context.setOffline(true);
   await page.reload();
   await expect(estado(page, /^Sin conexión/)).toBeVisible();
+  await irAMas(page);
   await expect(page.getByRole("button", { name: /^AN?\s*ana/i })).toBeVisible();
   await expect(page.getByRole("button", { name: "Entrar" })).toHaveCount(0);
   expect(await page.evaluate(() => localStorage.getItem("sb-127-auth-token"))).not.toBeNull();
@@ -255,7 +260,8 @@ test("el asistente y el PDF dicen que necesitan conexión", async ({ context, pa
   await context.setOffline(true);
   await expect(estado(page, /^Sin conexión/)).toBeVisible();
 
-  await page.getByRole("button", { name: "PDF" }).click();
+  await irAMas(page);
+  await page.getByRole("button", { name: "Informes PDF" }).click();
   await expect(page.getByRole("heading", { name: "El PDF necesita conexión" })).toBeVisible();
   await page.getByRole("button", { name: "Cerrar" }).click();
 

@@ -1,52 +1,71 @@
-import { AnimatePresence, MotionConfig, motion } from "framer-motion";
 import {
   Activity,
   AlertCircle,
+  ArrowLeft,
+  CalendarClock,
   CheckCircle2,
-  ChevronDown,
-  DatabaseBackup,
-  FileDown,
+  ClipboardPlus,
   LayoutDashboard,
+  Menu,
   Package,
-  Plus,
   RefreshCw,
+  UploadCloud,
   Users,
   WifiOff,
   type LucideIcon,
 } from "lucide-react";
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import clsx from "clsx";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { BandaEstado } from "./components/BandaEstado";
 import { BotonAsistente } from "./components/BotonAsistente";
-import { AvisoReporte } from "./components/CampanaReporte";
-import { Cuenta } from "./components/Cuenta";
-import { LimiteError } from "./components/LimiteError";
-import { VentanaProducto, VentanaTrabajador } from "./components/Detalles";
-import { EstadoRed } from "./components/EstadoRed";
+import { crearDiferido } from "./components/Diferido";
 import { Marca } from "./components/Marca";
 import { NecesitaConexion } from "./components/NecesitaConexion";
-import { NuevoProductoDialog, NuevoTrabajadorDialog } from "./components/Nuevo";
-import { PedidosDialog } from "./components/Pedidos";
-import { AnularDialog, RegistrarDialog, type PreRegistro } from "./components/Registrar";
-import { Boton, Skeleton } from "./components/ui";
+import type { PreRegistro } from "./components/Registrar";
+import { SelectorEmpresa } from "./components/SelectorEmpresa";
 import { AuthProvider, useAuth } from "./lib/auth";
-import { filtrarPorEmpresa, resumir, type GrupoProducto } from "./lib/derive";
-import { edadCopia, fechaLarga, titulo } from "./lib/format";
+import type { GrupoProducto } from "./lib/derive";
+import { filtrarPorEmpresa } from "./lib/filtroEmpresa";
+import { edadCopia, fechaLarga, hoyISO } from "./lib/format";
+import { estadoReporte } from "./lib/reporteSemanal";
 import { conProvisional } from "./lib/offline/provisional";
 import { usePwa } from "./lib/offline/pwa";
 import { useRespaldo } from "./lib/offline/useRespaldo";
 import type { Movimiento } from "./lib/types";
 import { useQuien } from "./lib/quien";
 import { useLiveData } from "./lib/useLiveData";
-import { cn } from "./lib/utils";
-import { Movimientos } from "./views/Movimientos";
-import { Respaldo } from "./views/Respaldo";
-import { Resumen } from "./views/Resumen";
-import { Stock } from "./views/Stock";
-import { Trabajadores } from "./views/Trabajadores";
+import { PantallaRegistrar } from "./views/PantallaRegistrar";
 import type { FiltroEstado, Vista, VistaProps } from "./views/tipos";
 
-// El chat y los informes pesan: se cargan la primera vez que se abren. Quedan guardados igual para usarlos después.
-const cargarAsistente = () => import("./components/Asistente").then((m) => ({ default: m.AsistenteDialog }));
-const cargarReportes = () => import("./components/Reportes").then((m) => ({ default: m.ReportesDialog }));
+// Solo la pantalla inicial viaja con la app. Lo demás se trae al abrirlo y queda guardado para usarlo sin red.
+const VResumen = crearDiferido(() => import("./views/Resumen").then((m) => ({ default: m.Resumen })));
+const VStock = crearDiferido(() => import("./views/Stock").then((m) => ({ default: m.Stock })));
+const VMovimientos = crearDiferido(() => import("./views/Movimientos").then((m) => ({ default: m.Movimientos })));
+const VTrabajadores = crearDiferido(() => import("./views/Trabajadores").then((m) => ({ default: m.Trabajadores })));
+const VRespaldo = crearDiferido(() => import("./views/Respaldo").then((m) => ({ default: m.Respaldo })));
+const VMas = crearDiferido(() => import("./views/Mas").then((m) => ({ default: m.Mas })));
+
+const DRegistrar = crearDiferido(() => import("./components/Registrar").then((m) => ({ default: m.RegistrarDialog })));
+const DAnular = crearDiferido(() => import("./components/Registrar").then((m) => ({ default: m.AnularDialog })));
+const DProducto = crearDiferido(() => import("./components/Detalles").then((m) => ({ default: m.VentanaProducto })));
+const DTrabajador = crearDiferido(() => import("./components/Detalles").then((m) => ({ default: m.VentanaTrabajador })));
+const DNuevoProducto = crearDiferido(() => import("./components/Nuevo").then((m) => ({ default: m.NuevoProductoDialog })));
+const DNuevoTrabajador = crearDiferido(() => import("./components/Nuevo").then((m) => ({ default: m.NuevoTrabajadorDialog })));
+const DPedidos = crearDiferido(() => import("./components/Pedidos").then((m) => ({ default: m.PedidosDialog })));
+const DAsistente = crearDiferido(() => import("./components/Asistente").then((m) => ({ default: m.AsistenteDialog })));
+const DReportes = crearDiferido(() => import("./components/Reportes").then((m) => ({ default: m.ReportesDialog })));
+const DEntrar = crearDiferido(() => import("./components/Cuenta").then((m) => ({ default: m.EntrarDialog })));
+const DPorSubir = crearDiferido(() => import("./views/PorSubirEncima").then((m) => ({ default: m.PorSubirEncima })));
+
+const PRECARGA: Partial<Record<Vista, () => void>> = {
+  resumen: VResumen.precargar,
+  stock: VStock.precargar,
+  movimientos: VMovimientos.precargar,
+  trabajadores: VTrabajadores.precargar,
+  respaldo: VRespaldo.precargar,
+  mas: VMas.precargar,
+};
+
 const CLAVE_LISTA_OFFLINE = "stock_lista_offline_v1";
 
 /** Solo la primera vez en este dispositivo. */
@@ -60,21 +79,49 @@ function primeraVezListaOffline(): boolean {
   return true;
 }
 
-const NAV: { id: Vista; texto: string; sub: string; icono: LucideIcon }[] = [
-  { id: "resumen", texto: "Resumen", sub: "Todo lo importante de un vistazo", icono: LayoutDashboard },
-  { id: "stock", texto: "Stock", sub: "Cuánto queda de cada producto y talla", icono: Package },
-  { id: "movimientos", texto: "Movimientos", sub: "Lo que entra y lo que sale", icono: Activity },
-  { id: "trabajadores", texto: "Trabajadores", sub: "Quién recibió qué", icono: Users },
-  { id: "respaldo", texto: "Respaldo", sub: "Lo guardado en este dispositivo", icono: DatabaseBackup },
-];
+/** Trae código en cuanto el navegador esté libre. */
+function cuandoEsteLibre(fn: () => void): () => void {
+  if ("requestIdleCallback" in window) {
+    const id = window.requestIdleCallback(fn, { timeout: 5_000 });
+    return () => window.cancelIdleCallback(id);
+  }
+  const id = globalThis.setTimeout(fn, 2_500);
+  return () => globalThis.clearTimeout(id);
+}
+
+const SECCIONES: Record<Vista, { texto: string; sub: string; icono: LucideIcon }> = {
+  registrar: { texto: "Registrar", sub: "", icono: ClipboardPlus },
+  resumen: { texto: "Resumen", sub: "Qué falta reponer y cómo se movió el almacén", icono: LayoutDashboard },
+  stock: { texto: "Stock", sub: "Cuánto queda de cada producto y talla", icono: Package },
+  respaldo: { texto: "Por subir", sub: "Lo guardado en este celular", icono: UploadCloud },
+  movimientos: { texto: "Movimientos", sub: "Lo que entra y lo que sale", icono: Activity },
+  trabajadores: { texto: "Trabajadores", sub: "Quién recibió qué", icono: Users },
+  mas: { texto: "Más", sub: "Informes, reporte semanal y ajustes", icono: Menu },
+};
+
+const NAV_LATERAL: Vista[] = ["registrar", "resumen", "stock", "respaldo", "movimientos", "trabajadores", "mas"];
+const NAV_MOVIL: Vista[] = ["registrar", "stock", "respaldo", "mas"];
+/** En el celular estas pantallas se abren desde Más. */
+const DENTRO_DE_MAS: Vista[] = ["movimientos", "trabajadores"];
+const CON_CIFRAS: Vista[] = ["resumen", "stock", "movimientos", "trabajadores"];
+const POR_EMPRESA: Vista[] = ["resumen", "stock", "movimientos"];
+
+const BOTON_AVISO = "inline-flex min-h-14 items-center justify-center gap-2 rounded-md border border-line bg-surface px-4 text-[16px] font-semibold text-ink";
+
+function EsperaVista() {
+  return (
+    <div className="space-y-5" aria-hidden>
+      <div className="skeleton h-40" />
+      <div className="skeleton h-64" />
+    </div>
+  );
+}
 
 export default function App() {
   return (
-    <MotionConfig reducedMotion="user">
-      <AuthProvider>
-        <Tablero />
-      </AuthProvider>
-    </MotionConfig>
+    <AuthProvider>
+      <Tablero />
+    </AuthProvider>
   );
 }
 
@@ -83,13 +130,13 @@ function Tablero() {
   const [quienEscrito, setAutor] = useQuien();
   // Con sesión firma el correo de la cuenta; sin sesión, el nombre que se escribió en este dispositivo.
   const autor = sesion?.user.email ?? quienEscrito;
-  const { datos: delServidor, cargando, error, cambioAt, ultimaCarga, tiempoReal, recargar, copiaLista, faltan } = useLiveData(true);
+  const { datos: delServidor, cargando, error, cambioAt, ultimaCarga, recargar, copiaLista, faltan } = useLiveData(true);
   const respaldo = useRespaldo(recargar, sesion?.user.id ?? null, cuentaVencida?.id ?? null);
   const { enLinea } = respaldo;
   // Lo que se ve incluye lo que todavía no subió. El servidor no sabe de ello: por eso los PDF usan delServidor.
   const { datos: todos, provisionales, sinSubir } = useMemo(() => conProvisional(delServidor, respaldo.items), [delServidor, respaldo.items]);
   const { actualizar: nuevaVersion, offlineListo } = usePwa();
-  const [vista, setVista] = useState<Vista>("resumen");
+  const [vista, setVista] = useState<Vista>("registrar");
   const [empresa, setEmpresa] = useState("TODAS");
   const [filtroEstado, setFiltroEstado] = useState<FiltroEstado>("todos");
   const [grupo, setGrupo] = useState<GrupoProducto | null>(null);
@@ -103,17 +150,18 @@ function Tablero() {
   const [anular, setAnular] = useState<Movimiento | null>(null);
   const [reportes, setReportes] = useState(false);
   const [pedidos, setPedidos] = useState(false);
-  const [falta, setFalta] = useState<"pdf" | "asistente" | null>(null);
-  const [usoChat, setUsoChat] = useState(false);
-  const [usoReportes, setUsoReportes] = useState(false);
-  // Un import que falló queda recordado por React.lazy: para reintentar hay que crear otro.
-  const [intentoChat, setIntentoChat] = useState(0);
-  const [intentoReportes, setIntentoReportes] = useState(0);
-  const AsistenteDialog = useMemo(() => lazy(cargarAsistente), [intentoChat]);
-  const ReportesDialog = useMemo(() => lazy(cargarReportes), [intentoReportes]);
+  const [falta, setFalta] = useState<"pdf" | "asistente" | "parte" | null>(null);
+  const [entrando, setEntrando] = useState(false);
+  // Por subir abierto desde la banda con un registro a medias: va encima y Atrás vuelve al registro.
+  const [porSubirEncima, setPorSubirEncima] = useState(false);
   const [aviso, setAviso] = useState<{ texto: string; error?: boolean } | null>(null);
   const ultimoAvisoPropio = useRef(0);
   const temporizadorAviso = useRef<number | undefined>(undefined);
+  // La primera pantalla no se anima: tiene que pintarse de inmediato.
+  const primeraVista = useRef(true);
+  useEffect(() => {
+    primeraVista.current = false;
+  }, []);
 
   const mostrar = useCallback((texto: string, esError = false) => {
     ultimoAvisoPropio.current = Date.now();
@@ -124,16 +172,27 @@ function Tablero() {
 
   useEffect(() => {
     document.title = "Stock EPP";
+    // Solo si el service worker ya guardó la app: entonces sale del propio celular y no gasta datos en la primera visita.
+    if (navigator.serviceWorker?.controller) return cuandoEsteLibre(DRegistrar.precargar);
   }, []);
+
+  // Con un registro, una ficha o una ventana abierta, los avisos informativos esperan: abajo están sus botones.
+  const hayCapa = registro || grupo !== null || trabajador !== null || nuevoProd !== null || nuevoTrab !== null || anular !== null || reportes || pedidos || asistente || entrando || falta !== null;
+  const hayCapaRef = useRef(hayCapa);
+  hayCapaRef.current = hayCapa;
 
   useEffect(() => {
     // Espera su turno: no puede tapar un aviso que importa más.
-    if (offlineListo && copiaLista && !aviso && primeraVezListaOffline()) mostrar("Lista para usar sin conexión");
-  }, [offlineListo, copiaLista, aviso, mostrar]);
+    if (offlineListo && copiaLista && !aviso && !hayCapa && primeraVezListaOffline()) mostrar("Lista para usar sin conexión");
+  }, [offlineListo, copiaLista, aviso, hayCapa, mostrar]);
+
+  useEffect(() => {
+    if (!registro) setPorSubirEncima(false);
+  }, [registro]);
 
   // Cuando OTRA persona registra algo, aparece un aviso breve (no se repite el de lo que acabas de hacer tu).
   useEffect(() => {
-    if (!cambioAt) return;
+    if (!cambioAt || hayCapaRef.current) return;
     if (Date.now() - ultimoAvisoPropio.current < 4000) return;
     setAviso({ texto: "Datos actualizados" });
     window.clearTimeout(temporizadorAviso.current);
@@ -150,7 +209,15 @@ function Tablero() {
     [todos.stock],
   );
   const datos = useMemo(() => filtrarPorEmpresa(todos, empresa), [todos, empresa]);
-  const ultimoMovimiento = useMemo(() => resumir(todos.stock, minimo).ultima, [todos.stock, minimo]);
+  // Sin campana, el reporte que ya está en rojo (viernes, sábado o atrasado) marca el botón Más.
+  const sync = todos.sync;
+  const reporteUrgente = useMemo(() => {
+    if (!sync?.reporte_inicio) return false;
+    const e = estadoReporte(sync.reporte_inicio, sync.reporte_ultimo, hoyISO(), sync.reporte_sabado ?? null);
+    return e.semaforo === "rojo" && (e.fase === "pendiente" || e.fase === "hoy" || e.fase === "atrasado");
+  }, [sync]);
+  // El mismo dato que resumir().ultima, sin traer derive.ts a la carga inicial.
+  const ultimoMovimiento = useMemo(() => todos.stock.reduce<string | null>((u, s) => (s.ultimo_movimiento && (!u || s.ultimo_movimiento > u) ? s.ultimo_movimiento : u), null), [todos.stock]);
 
   // Si la empresa elegida desaparece del catalogo, vuelve a "todas".
   useEffect(() => {
@@ -160,7 +227,7 @@ function Tablero() {
   const irA = (v: Vista, estado?: FiltroEstado) => {
     setVista(v);
     if (estado) setFiltroEstado(estado);
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    window.scrollTo({ top: 0 });
   };
 
   // Si se corta la señal con estas ventanas abiertas, se dice claro en vez de fallar a medias.
@@ -182,8 +249,18 @@ function Tablero() {
       return;
     }
     setPreguntaAsistente(pregunta ?? null);
-    setUsoChat(true);
     setAsistente(true);
+  };
+
+  const abrirPdf = () => {
+    if (!enLinea) return setFalta("pdf");
+    setReportes(true);
+  };
+
+  /** Punto de entrada al registro. Con tipo, el formulario abre ya en entrada o salida. */
+  const abrirRegistro = (tipo?: "entrada" | "salida") => {
+    if (tipo) setPre({ tipo, n: Date.now() });
+    setRegistro(true);
   };
 
   const propsVista: VistaProps = {
@@ -199,7 +276,7 @@ function Tablero() {
     setFiltroEstado,
     editor: puede,
     pedirAnular: setAnular,
-    abrirRegistro: () => setRegistro(true),
+    abrirRegistro: () => abrirRegistro(),
     abrirNuevoProducto: () => setNuevoProd({ empresa }),
     abrirNuevoTrabajador: () => setNuevoTrab(""),
     abrirAsistente: (pregunta) => abrirChat(pregunta),
@@ -215,141 +292,162 @@ function Tablero() {
     setRegistro(true);
   };
 
-  const actual = NAV.find((n) => n.id === vista)!;
-  const estadoRed = { r: respaldo, errorDatos: error !== null, tiempoReal, ultimaCarga, alAbrir: () => irA("respaldo") };
+  const actual = SECCIONES[vista];
   const registros = (n: number) => `${n} ${n === 1 ? "registro" : "registros"}`;
   // Sin señal, una copia de hace semanas se ve igual que una de hace minutos: la edad se dice.
   const edad = !enLinea ? edadCopia(ultimaCarga, Date.now()) : null;
-  // Hay badge en Respaldo solo cuando algo espera o necesita mirarse.
+  // El distintivo sale solo cuando algo espera o necesita mirarse.
   const avisosRespaldo = respaldo.porSubir + respaldo.porRevisar;
+  const sinDatos = error === "sin-copia" || (error === "servidor" && todos.stock.length === 0);
+  const conCifras = CON_CIFRAS.includes(vista);
+  const activaMovil = DENTRO_DE_MAS.includes(vista) ? "mas" : vista;
+  const mostrarCuenta = (todos.sync !== null && !registroAbierto) || Boolean(sesion) || Boolean(cuentaVencida);
+  const alFallarParte = (cerrar: () => void) => () => {
+    cerrar();
+    setFalta("parte");
+  };
+  // El estado va escrito para el lector de pantalla; a la vista, icono de calendario sobre rojo.
+  const marcaReporte = (
+    <span role="img" aria-label="Reporte semanal pendiente" title="Reporte semanal pendiente" className="grid size-6 place-items-center rounded-full bg-red text-white">
+      <CalendarClock className="size-4" aria-hidden />
+    </span>
+  );
+  // Un registro abierto nunca lleva otra pantalla visible encima de otra: la de arriba oculta a la de abajo.
+  const nuevoEnRegistro = registro && (nuevoProd !== null || nuevoTrab !== null);
+
+  const avisoSinDatos = (
+    <div className="mx-auto max-w-md rounded-2xl border border-line-2 bg-surface px-6 py-8 text-center">
+      <WifiOff className="mx-auto mb-3 size-6 text-warn" aria-hidden />
+      <p className="text-[18px] font-semibold">{error === "sin-copia" ? "Todavía no hay datos guardados en este dispositivo" : "No se pudieron cargar los datos"}</p>
+      <p className="mt-1 text-[16px] text-muted">{error === "sin-copia" ? "Ábrela una vez con conexión. Después funciona también sin señal." : "Se reintentará solo en unos segundos."}</p>
+    </div>
+  );
+
+  const contenido = () => {
+    if (vista === "registrar") {
+      return (
+        <PantallaRegistrar
+          r={respaldo}
+          puede={puede}
+          cerrado={todos.sync !== null && !puede}
+          conSesion={Boolean(sesion)}
+          alElegir={abrirRegistro}
+          alPrepararse={DRegistrar.precargar}
+          abrirAsistente={() => abrirChat()}
+          alEntrar={() => setEntrando(true)}
+        >
+          {sinDatos ? avisoSinDatos : null}
+        </PantallaRegistrar>
+      );
+    }
+    if (vista === "respaldo") return <VRespaldo r={respaldo} autorizado={Boolean(sesion) && editor} espera={<EsperaVista />} />;
+    if (vista === "mas") {
+      return (
+        <VMas
+          espera={<EsperaVista />}
+          irA={irA}
+          abrirPdf={abrirPdf}
+          cargando={cargando}
+          delServidor={delServidor}
+          autor={autor}
+          avisar={mostrar}
+          recargar={recargar}
+          errorDatos={error === "servidor"}
+          dueno={sesion?.user.id ?? null}
+          mostrarCuenta={mostrarCuenta}
+          puede={puede}
+          porSubir={respaldo.porSubir}
+          empresa={empresa}
+          empresas={empresas}
+          cambiarEmpresa={setEmpresa}
+        />
+      );
+    }
+    if (sinDatos) return avisoSinDatos;
+    if (cargando) return <EsperaVista />;
+    if (vista === "resumen") return <VResumen {...propsVista} espera={<EsperaVista />} />;
+    if (vista === "stock") return <VStock {...propsVista} espera={<EsperaVista />} />;
+    if (vista === "movimientos") return <VMovimientos {...propsVista} espera={<EsperaVista />} />;
+    return <VTrabajadores {...propsVista} espera={<EsperaVista />} />;
+  };
 
   return (
-    <div className="min-h-screen lg:pl-64">
-      {/* Barra lateral */}
-      <aside className="fixed inset-y-0 left-0 z-40 hidden w-64 flex-col border-r border-line-2 bg-surface px-4 py-5 lg:flex">
+    <div className="min-h-screen pt-14 lg:pl-64">
+      {/* En medio de un registro la vista de fondo no cambia: Por subir se abre encima. */}
+      <BandaEstado r={respaldo} ultimaCarga={ultimaCarga} alAbrir={() => (registro && puede ? setPorSubirEncima(true) : irA("respaldo"))} />
+
+      {/* Barra lateral en escritorio */}
+      <aside className="no-print fixed bottom-0 left-0 top-14 z-40 hidden w-64 flex-col border-r border-line-2 bg-surface px-4 py-5 lg:flex">
         <div className="flex items-center gap-3 px-2">
-          <div className="grid size-9 place-items-center rounded-xl bg-ink">
+          <div className="grid size-9 place-items-center rounded-xl bg-action">
             <Marca tam={22} />
           </div>
-          <div>
-            <p className="text-sm font-semibold leading-tight">Stock EPP</p>
-            <p className="text-[11px] text-muted">Control en vivo</p>
-          </div>
+          <p className="text-[16px] font-semibold leading-tight">Stock EPP</p>
         </div>
 
-        <nav className="mt-8 space-y-1" aria-label="Secciones">
-          {NAV.map((n) => (
-            <button
-              key={n.id}
-              type="button"
-              onClick={() => irA(n.id)}
-              aria-current={vista === n.id ? "page" : undefined}
-              className={cn(
-                "flex h-11 w-full items-center gap-3 rounded-xl px-3 text-sm font-semibold transition",
-                vista === n.id ? "bg-ink text-white" : "text-muted hover:bg-ground hover:text-ink",
-              )}
-            >
-              <n.icono className="size-[18px]" />
-              <span className="flex-1 text-left">{n.texto}</span>
-              {n.id === "respaldo" && avisosRespaldo > 0 && <span className="num rounded-full bg-warn px-2 py-0.5 text-[11px] text-white">{avisosRespaldo}</span>}
-            </button>
-          ))}
+        <nav className="mt-6 space-y-1" aria-label="Secciones">
+          {NAV_LATERAL.map((id) => {
+            const n = SECCIONES[id];
+            return (
+              <button
+                key={id}
+                type="button"
+                onClick={() => irA(id)}
+                onPointerEnter={PRECARGA[id]}
+                aria-current={vista === id ? "page" : undefined}
+                className={clsx("flex h-14 w-full items-center gap-3 rounded-md px-3 text-[16px] font-semibold", vista === id ? "bg-action text-white" : "text-muted hover:bg-ground hover:text-ink")}
+              >
+                <n.icono className="size-5" aria-hidden />
+                <span className="flex-1 text-left">{n.texto}</span>
+                {id === "respaldo" && avisosRespaldo > 0 && <span className="num rounded-full bg-warn px-2 py-0.5 text-[14px] text-white">{avisosRespaldo}</span>}
+                {id === "mas" && reporteUrgente && marcaReporte}
+              </button>
+            );
+          })}
         </nav>
 
-        <div className="mt-auto space-y-3">
-          <EstadoRed {...estadoRed} />
-          {ultimoMovimiento && <p className="px-1 text-[12px] leading-relaxed text-muted">Último movimiento: {fechaLarga(ultimoMovimiento)}</p>}
-        </div>
+        {ultimoMovimiento && <p className="mt-auto px-1 text-[14px] text-muted">Último movimiento: {fechaLarga(ultimoMovimiento)}</p>}
       </aside>
 
-      {/* Cabecera */}
-      <header className="sticky top-0 z-30 border-b border-line-2/70 bg-ground/85 backdrop-blur-md">
-        <div className="mx-auto flex max-w-[1480px] flex-wrap items-center gap-x-4 gap-y-3 px-4 py-4 lg:px-8">
-          <div className="mr-auto w-full min-w-0 sm:w-auto">
-            <h1 className="display text-2xl font-semibold leading-tight lg:text-[28px]">{actual.texto}</h1>
-            <p className="truncate text-[13px] text-muted">{actual.sub}</p>
-          </div>
-
-          <div className="no-print flex flex-wrap items-center gap-2.5">
-            {/* Trabajadores y Respaldo no dependen de la empresa: ahí el filtro no haría nada. */}
-            {vista !== "trabajadores" && vista !== "respaldo" && (
-            <div className="relative">
-              <select
-                value={empresa}
-                onChange={(e) => setEmpresa(e.target.value)}
-                aria-label="Empresa"
-                className="h-10 appearance-none rounded-xl border border-line bg-surface py-0 pl-3.5 pr-9 text-sm font-semibold outline-none transition hover:bg-ground focus-visible:border-ink"
-              >
-                <option value="TODAS">Todas las empresas</option>
-                {empresas.map((e) => (
-                  <option key={e} value={e}>
-                    {titulo(e)}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-faint" />
-            </div>
-            )}
-
-            {puede && (
-              <Boton variante="ink" className="hidden sm:inline-flex" onClick={() => setRegistro(true)}>
-                <Plus className="size-4" /> Registrar
-              </Boton>
-            )}
-
-            {((todos.sync !== null && !registroAbierto) || sesion || cuentaVencida) && <Cuenta avisar={mostrar} puede={puede} porSubir={respaldo.porSubir} />}
-
-            <Boton onClick={() => {
-                if (!enLinea) return setFalta("pdf");
-                setUsoReportes(true);
-                setReportes(true);
-              }} disabled={cargando}>
-              <FileDown className="size-4" />
-              PDF
-            </Boton>
-          </div>
-        </div>
-      </header>
-
-      <main className="mx-auto max-w-[1480px] px-4 pb-44 pt-6 lg:px-8 lg:pb-12">
+      {/* En escritorio el botón del asistente ocupa 88 px abajo a la derecha: el final de cada pantalla queda por encima. */}
+      <main className="mx-auto max-w-[1480px] px-4 pb-[calc(72px+env(safe-area-inset-bottom)+24px)] pt-6 lg:px-8 lg:pb-28">
         {cuentaVencida && !sesion && (
-          <div role="alert" className="no-print mb-5 flex items-start gap-3 rounded-2xl bg-warn-soft px-4 py-3 text-[13px] font-medium text-warn">
-            <AlertCircle className="mt-0.5 size-4 shrink-0" />
+          <div role="alert" className="no-print mb-5 flex items-start gap-3 rounded-2xl bg-warn-soft px-4 py-3 text-[16px] font-medium text-warn">
+            <AlertCircle className="mt-0.5 size-5 shrink-0" aria-hidden />
             <p className="flex-1">Tu sesión se cerró{cuentaVencida.email ? ` (${cuentaVencida.email})` : ""}. Entra de nuevo con tu cuenta: lo que tengas guardado aquí sigue a salvo y se sube cuando entres.</p>
           </div>
         )}
         {respaldo.recargaNecesaria && (
-          <div role="alert" className="no-print mb-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-red-soft px-4 py-3 text-[13px] font-medium text-red">
+          <div role="alert" className="no-print mb-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-red-soft px-4 py-3 text-[16px] font-medium text-red">
             <p className="flex-1">Se abrió una versión nueva de la app en otra pestaña y esta ya no puede guardar en el dispositivo. Recárgala para seguir registrando.</p>
-            <Boton className="h-9" onClick={() => window.location.reload()}>
-              <RefreshCw className="size-3.5" /> Recargar
-            </Boton>
+            <button type="button" onClick={() => window.location.reload()} className={BOTON_AVISO}>
+              <RefreshCw className="size-4" aria-hidden /> Recargar
+            </button>
           </div>
         )}
         {respaldo.bloqueado && (
-          <div role="alert" className="no-print mb-5 flex items-start gap-3 rounded-2xl bg-red-soft px-4 py-3 text-[13px] font-medium text-red">
-            <AlertCircle className="mt-0.5 size-4 shrink-0" />
+          <div role="alert" className="no-print mb-5 flex items-start gap-3 rounded-2xl bg-red-soft px-4 py-3 text-[16px] font-medium text-red">
+            <AlertCircle className="mt-0.5 size-5 shrink-0" aria-hidden />
             <p className="flex-1">Hay otra pestaña abierta con una versión anterior de la app. Ciérrala para poder guardar en este dispositivo.</p>
           </div>
         )}
-        {!cargando && <AvisoReporte todos={delServidor} autor={autor} avisar={mostrar} recargar={recargar} errorDatos={error === "servidor"} dueno={sesion?.user.id ?? null} />}
         {nuevaVersion && (
-          <div className="no-print mb-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-surface px-4 py-3 text-[13px] shadow-card">
+          <div className="no-print mb-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-line bg-surface px-4 py-3 text-[16px]">
             <span>Hay una versión nueva de la app.</span>
-            <Boton className="h-9" onClick={nuevaVersion}>
-              <RefreshCw className="size-3.5" /> Actualizar
-            </Boton>
+            <button type="button" onClick={nuevaVersion} className={BOTON_AVISO}>
+              <RefreshCw className="size-4" aria-hidden /> Actualizar
+            </button>
           </div>
         )}
         {error === "servidor" && todos.stock.length > 0 && (
-          <div role="alert" className="mb-5 flex items-start gap-3 rounded-2xl bg-red-soft px-4 py-3 text-[13px] text-red">
-            <AlertCircle className="mt-0.5 size-4 shrink-0" />
+          <div role="alert" className="mb-5 flex items-start gap-3 rounded-2xl bg-red-soft px-4 py-3 text-[16px] text-red">
+            <AlertCircle className="mt-0.5 size-5 shrink-0" aria-hidden />
             <span>El servidor no entregó los datos. Se reintentará solo.</span>
           </div>
         )}
-        {vista !== "respaldo" && !cargando && error !== "sin-copia" && (!enLinea || provisionales > 0) && (
-          <div className="no-print mb-5 flex items-start gap-3 rounded-2xl bg-warn-soft px-4 py-3 text-justify text-[13px] font-medium text-warn" data-testid="aviso-provisional">
-            <WifiOff className="mt-0.5 size-4 shrink-0" />
+        {conCifras && !cargando && error !== "sin-copia" && (!enLinea || provisionales > 0) && (
+          <div className="no-print mb-5 flex items-start gap-3 rounded-2xl bg-warn-soft px-4 py-3 text-justify text-[16px] font-medium text-warn" data-testid="aviso-provisional">
+            <WifiOff className="mt-0.5 size-5 shrink-0" aria-hidden />
             <span>
               {sinSubir > 0
                 ? `Cifras provisionales: falta subir ${registros(sinSubir)}.${edad ? ` Los datos son ${edad}.` : ""}`
@@ -361,99 +459,65 @@ function Tablero() {
             </span>
           </div>
         )}
-        {vista !== "respaldo" && !cargando && faltan.length > 0 && error !== "sin-copia" && (
-          <div role="alert" className="no-print mb-5 flex items-start gap-3 rounded-2xl bg-warn-soft px-4 py-3 text-justify text-[13px] font-medium text-warn">
-            <AlertCircle className="mt-0.5 size-4 shrink-0" />
+        {conCifras && !cargando && faltan.length > 0 && error !== "sin-copia" && (
+          <div role="alert" className="no-print mb-5 flex items-start gap-3 rounded-2xl bg-warn-soft px-4 py-3 text-justify text-[16px] font-medium text-warn">
+            <AlertCircle className="mt-0.5 size-5 shrink-0" aria-hidden />
             <span>No todo alcanzó a descargarse antes de perder la señal. Lo que falte aparecerá cuando vuelva la conexión.</span>
           </div>
         )}
 
-        {(error === "sin-copia" || (error === "servidor" && todos.stock.length === 0)) && vista !== "respaldo" ? (
-          <div className="mx-auto max-w-md rounded-3xl border border-line-2 bg-surface px-6 py-10 text-center shadow-card">
-            <WifiOff className="mx-auto mb-3 size-6 text-warn" />
-            <p className="text-sm font-semibold">{error === "sin-copia" ? "Todavía no hay datos guardados en este dispositivo" : "No se pudieron cargar los datos"}</p>
-            <p className="mt-1 text-[13px] leading-relaxed text-muted">{error === "sin-copia" ? "Ábrela una vez con conexión. Después funciona también sin señal." : "Se reintentará solo en unos segundos."}</p>
-          </div>
-        ) : cargando ? (
-          <div className="space-y-5">
-            <div className="grid grid-cols-1 gap-5 xl:grid-cols-3">
-              <Skeleton className="h-[360px] xl:col-span-2" />
-              <Skeleton className="h-[360px]" />
+        {vista !== "registrar" && (
+          <header className="mb-5 flex flex-wrap items-center gap-x-4 gap-y-3">
+            {DENTRO_DE_MAS.includes(vista) && (
+              <button type="button" onClick={() => irA("mas")} aria-label="Volver a Más" className="grid size-14 shrink-0 place-items-center rounded-xl border border-line bg-surface lg:hidden">
+                <ArrowLeft className="size-6" aria-hidden />
+              </button>
+            )}
+            <div className="mr-auto min-w-0">
+              <h1 className="text-[24px] font-semibold leading-8">{actual.texto}</h1>
+              <p className="truncate text-left text-[16px] text-muted">{actual.sub}</p>
             </div>
-            <div className="grid grid-cols-2 gap-5 xl:grid-cols-4">
-              {[0, 1, 2, 3].map((i) => (
-                <Skeleton key={i} className="h-32" />
-              ))}
-            </div>
-          </div>
-        ) : (
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={vista}
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -4 }}
-              transition={{ duration: 0.2 }}
-            >
-              {vista === "resumen" && <Resumen {...propsVista} />}
-              {vista === "stock" && <Stock {...propsVista} />}
-              {vista === "movimientos" && <Movimientos {...propsVista} />}
-              {vista === "trabajadores" && <Trabajadores {...propsVista} />}
-              {vista === "respaldo" && <Respaldo r={respaldo} autorizado={Boolean(sesion) && editor} />}
-            </motion.div>
-          </AnimatePresence>
+            {/* En todos los anchos: si la lista está filtrada por empresa, se tiene que ver arriba. */}
+            {POR_EMPRESA.includes(vista) && <SelectorEmpresa empresa={empresa} empresas={empresas} alCambiar={setEmpresa} className="no-print w-full sm:w-auto sm:min-w-64" />}
+          </header>
         )}
+
+        <div key={vista} className={primeraVista.current ? undefined : "paso-entra"}>
+          {contenido()}
+        </div>
       </main>
 
-      {/* En el celular, la acción principal */}
-      {puede && (
-        <button
-          type="button"
-          onClick={() => setRegistro(true)}
-          className="no-print fixed bottom-[8.75rem] right-4 z-40 inline-flex h-14 items-center gap-2 rounded-full bg-ink px-5 text-sm font-semibold text-white shadow-pop transition active:scale-95 sm:hidden"
-        >
-          <Plus className="size-5" /> Registrar
-        </button>
-      )}
+      {/* Navegación en el celular */}
+      <nav className="no-print fixed inset-x-0 bottom-0 z-40 flex h-[calc(72px+env(safe-area-inset-bottom))] border-t border-line bg-surface pb-[env(safe-area-inset-bottom)] lg:hidden" aria-label="Secciones">
+        {NAV_MOVIL.map((id) => {
+          const n = SECCIONES[id];
+          return (
+            <button
+              key={id}
+              type="button"
+              onClick={() => irA(id)}
+              onPointerDown={PRECARGA[id]}
+              aria-current={activaMovil === id ? "page" : undefined}
+              className={clsx("relative flex min-w-0 flex-1 flex-col items-center justify-center gap-0.5 text-[14px] font-semibold leading-5", activaMovil === id ? "bg-ground text-action" : "text-muted")}
+            >
+              <n.icono className="size-7" aria-hidden />
+              <span className="max-w-full truncate px-0.5">{n.texto}</span>
+              {id === "respaldo" && avisosRespaldo > 0 && <span className="num absolute left-1/2 top-1 ml-2 min-w-6 rounded-full bg-red px-1.5 text-center text-[14px] leading-5 text-white">{avisosRespaldo}</span>}
+              {id === "mas" && reporteUrgente && <span className="absolute left-1/2 top-1 ml-2">{marcaReporte}</span>}
+            </button>
+          );
+        })}
+      </nav>
 
-      {/* En pantallas grandes el asistente tiene su botón; en el celular se abre desde Registrar */}
       {puede && !asistente && <BotonAsistente onClick={() => abrirChat()} />}
 
-      {/* Navegacion inferior en celular */}
-      <div className="no-print fixed inset-x-3 bottom-3 z-40 space-y-1.5 lg:hidden">
-        <EstadoRed {...estadoRed} className="shadow-card" />
-        <nav className="flex rounded-2xl border border-line bg-surface/95 p-1.5 shadow-pop backdrop-blur" aria-label="Secciones">
-          {NAV.map((n) => (
-            <button
-              key={n.id}
-              type="button"
-              onClick={() => irA(n.id)}
-              aria-current={vista === n.id ? "page" : undefined}
-              className={cn(
-                "relative flex min-w-0 flex-1 flex-col items-center gap-1 rounded-xl py-2 text-[10px] font-semibold transition",
-                vista === n.id ? "bg-ink text-white" : "text-muted",
-              )}
-            >
-              <n.icono className="size-[18px]" />
-              <span className="max-w-full truncate px-0.5">{n.texto}</span>
-              {n.id === "respaldo" && avisosRespaldo > 0 && <span className="num absolute right-1 top-1 rounded-full bg-warn px-1.5 text-[10px] text-white">{avisosRespaldo}</span>}
-            </button>
-          ))}
-        </nav>
-      </div>
-
-      {puede && usoChat && (
-        <LimiteError
-          key={`chat-${intentoChat}`}
+      {puede && (
+        <DAsistente
+          activo={asistente}
           alFallar={() => {
             setAsistente(false);
-            setUsoChat(false);
-            setIntentoChat((n) => n + 1);
             setFalta("asistente");
           }}
-        >
-        <Suspense fallback={null}>
-        <AsistenteDialog
           abierto={asistente}
           alCerrar={() => setAsistente(false)}
           datos={todos}
@@ -467,38 +531,29 @@ function Tablero() {
           iniciar={preguntaAsistente}
           consumirIniciar={() => setPreguntaAsistente(null)}
         />
-        </Suspense>
-        </LimiteError>
       )}
-      {usoReportes && (
-        <LimiteError
-          key={`reportes-${intentoReportes}`}
-          alFallar={() => {
-            setReportes(false);
-            setUsoReportes(false);
-            setIntentoReportes((n) => n + 1);
-            setFalta("pdf");
-          }}
-        >
-        <Suspense fallback={null}>
-          <ReportesDialog
-            errorDatos={error === "servidor"}
-            abierto={reportes}
-            alCerrar={() => setReportes(false)}
-            todos={delServidor}
-            empresas={empresas}
-            empresaInicial={empresa}
-            usuario={autor}
-            dueno={sesion?.user.id ?? null}
-            avisar={mostrar}
-          />
-        </Suspense>
-        </LimiteError>
-      )}
-      <VentanaProducto grupo={grupo} datos={todos} minimo={minimo} alCerrar={() => setGrupo(null)} editor={puede} alRegistrar={registrarDe} />
-      <VentanaTrabajador nombre={trabajador} datos={todos} alCerrar={() => setTrabajador(null)} />
+      <DReportes
+        activo={reportes}
+        alFallar={() => {
+          setReportes(false);
+          setFalta("pdf");
+        }}
+        errorDatos={error === "servidor"}
+        abierto={reportes}
+        alCerrar={() => setReportes(false)}
+        todos={delServidor}
+        empresas={empresas}
+        empresaInicial={empresa}
+        usuario={autor}
+        dueno={sesion?.user.id ?? null}
+        avisar={mostrar}
+      />
+      <DProducto activo={grupo !== null} alFallar={alFallarParte(() => setGrupo(null))} grupo={grupo} datos={todos} minimo={minimo} alCerrar={() => setGrupo(null)} editor={puede} alRegistrar={registrarDe} />
+      <DTrabajador activo={trabajador !== null} alFallar={alFallarParte(() => setTrabajador(null))} nombre={trabajador} datos={todos} alCerrar={() => setTrabajador(null)} />
       {puede && (
-        <RegistrarDialog
+        <DRegistrar
+          activo={registro}
+          alFallar={alFallarParte(() => setRegistro(false))}
           abierto={registro}
           alCerrar={() => setRegistro(false)}
           stock={todos.stock}
@@ -516,13 +571,14 @@ function Tablero() {
             setRegistro(false);
             abrirChat();
           }}
+          enPausa={nuevoEnRegistro || porSubirEncima}
         />
       )}
+      {puede && <DPedidos activo={pedidos} alFallar={alFallarParte(() => setPedidos(false))} abierto={pedidos} alCerrar={() => setPedidos(false)} pedidos={todos.pedidos} stock={todos.stock} autor={autor} setAutor={setAutor} pedirAutor={!sesion} avisar={mostrar} recargar={recargar} />}
       {puede && (
-        <PedidosDialog abierto={pedidos} alCerrar={() => setPedidos(false)} pedidos={todos.pedidos} stock={todos.stock} autor={autor} setAutor={setAutor} pedirAutor={!sesion} avisar={mostrar} recargar={recargar} />
-      )}
-      {puede && (
-        <NuevoProductoDialog
+        <DNuevoProducto
+          activo={nuevoProd !== null}
+          alFallar={alFallarParte(() => setNuevoProd(null))}
           abierto={nuevoProd !== null}
           alCerrar={() => setNuevoProd(null)}
           stock={todos.stock}
@@ -531,6 +587,8 @@ function Tablero() {
           autor={autor}
           setAutor={setAutor}
           pedirAutor={!sesion}
+          enFlujo={registro}
+          enPausa={porSubirEncima}
           alCrear={(r) => {
             // Si se creo desde el registro, queda elegido para seguir.
             if (registro) setPre({ empresa: r.empresa, producto: r.producto, n: Date.now() });
@@ -538,7 +596,9 @@ function Tablero() {
         />
       )}
       {puede && (
-        <NuevoTrabajadorDialog
+        <DNuevoTrabajador
+          activo={nuevoTrab !== null}
+          alFallar={alFallarParte(() => setNuevoTrab(null))}
           abierto={nuevoTrab !== null}
           alCerrar={() => setNuevoTrab(null)}
           trabajadores={todos.trabajadores}
@@ -547,43 +607,53 @@ function Tablero() {
           autor={autor}
           setAutor={setAutor}
           pedirAutor={!sesion}
+          enFlujo={registro}
+          enPausa={porSubirEncima}
           alCrear={(nombre) => {
             if (registro) setPre({ tipo: "salida", trabajador: nombre, n: Date.now() });
           }}
         />
       )}
       {puede && (
-        <AnularDialog mov={anular} alCerrar={() => setAnular(null)} avisar={mostrar} autor={autor} setAutor={setAutor} pedirAutor={!sesion} stock={todos.stock} pedidos={todos.pedidos} />
+        <DPorSubir
+          activo={porSubirEncima}
+          alFallar={alFallarParte(() => setPorSubirEncima(false))}
+          abierta={porSubirEncima}
+          alAtras={() => setPorSubirEncima(false)}
+          r={respaldo}
+          autorizado={Boolean(sesion) && editor}
+        />
       )}
+      <DEntrar activo={entrando} alFallar={alFallarParte(() => setEntrando(false))} abierto={entrando} alCerrar={() => setEntrando(false)} />
+      {puede && <DAnular activo={anular !== null} alFallar={alFallarParte(() => setAnular(null))} mov={anular} alCerrar={() => setAnular(null)} avisar={mostrar} autor={autor} setAutor={setAutor} pedirAutor={!sesion} stock={todos.stock} pedidos={todos.pedidos} />}
 
       <NecesitaConexion
         abierto={falta !== null}
         alCerrar={() => setFalta(null)}
-        que={falta === "pdf" ? "El PDF" : "El asistente"}
+        que={falta === "pdf" ? "El PDF" : falta === "asistente" ? "El asistente" : "Esta parte de la app"}
         detalle={
           falta === "pdf"
             ? "Para armar el informe hacen falta las fotos del servidor. Puedes seguir registrando y sacar el PDF cuando vuelva la señal."
-            : "El asistente responde desde el servidor. Sin señal usa el botón Registrar: tus movimientos y fotos quedan guardados y se suben después."
+            : falta === "asistente"
+              ? "El asistente responde desde el servidor. Sin señal usa el botón Registrar: tus movimientos y fotos quedan guardados y se suben después."
+              : "Se descarga la primera vez que se abre con señal. Lo que ya guardaste sigue en este celular."
         }
       />
 
-      <AnimatePresence>
-        {aviso && (
-          <motion.div
-            role="status"
-            initial={{ opacity: 0, y: 12, scale: 0.96 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 8 }}
-            className={cn(
-              "fixed bottom-[8.75rem] left-1/2 z-[60] flex max-w-[calc(100vw-2rem)] -translate-x-1/2 items-center gap-2 rounded-full px-4 py-2.5 text-[13px] font-semibold text-white shadow-pop lg:bottom-8",
-              aviso.error ? "bg-red" : "bg-ink",
-            )}
-          >
-            {aviso.error ? <AlertCircle className="size-4 shrink-0" /> : <CheckCircle2 className="size-4 shrink-0" />}
-            <span className="truncate">{aviso.texto}</span>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/* Un aviso no es un botón: tono suave, borde, ancho de su texto y alineado a la izquierda. */}
+      {aviso && (
+        <div
+          key={aviso.texto}
+          role="status"
+          className={clsx(
+            "paso-entra pointer-events-none fixed inset-x-4 bottom-[calc(72px+env(safe-area-inset-bottom)+12px)] z-[60] mx-auto flex w-fit max-w-[calc(100vw-32px)] items-center gap-2.5 rounded-2xl border px-4 py-2.5 text-[16px] font-semibold leading-6 lg:bottom-8 lg:left-64 lg:right-0 lg:max-w-[calc(100vw-20rem)]",
+            aviso.error ? "border-red/40 bg-red-soft text-red" : "border-ok/40 bg-ok-soft text-ok",
+          )}
+        >
+          {aviso.error ? <AlertCircle className="size-5 shrink-0" aria-hidden /> : <CheckCircle2 className="size-5 shrink-0" aria-hidden />}
+          <span className="text-left">{aviso.texto}</span>
+        </div>
+      )}
     </div>
   );
 }

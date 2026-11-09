@@ -2,7 +2,7 @@ import type { GrupoProducto } from "../lib/derive";
 import type { Datos, Estado, Movimiento } from "../lib/types";
 import type { Campo } from "../lib/useLiveData";
 
-export type Vista = "resumen" | "stock" | "movimientos" | "trabajadores" | "respaldo";
+export type Vista = "registrar" | "resumen" | "stock" | "movimientos" | "trabajadores" | "respaldo" | "mas";
 export type FiltroEstado = Estado | "todos";
 
 export type VistaProps = {

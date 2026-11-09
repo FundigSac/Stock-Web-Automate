@@ -347,8 +347,8 @@ export function textoEstado(i: ItemRespaldo, subiendoAhora: boolean): string {
 
 /** Lo que se le dice a la persona según cómo quedó el registro. */
 export function textoGuardado(it: Pick<ItemRespaldo, "estado" | "revision">, base: string): string {
-  if (it.estado === "rechazado") return `${base}. El servidor no lo aceptó y no cuenta en el stock: míralo en Respaldo.`;
-  if (it.estado === "confirmado") return it.revision ? `${base}. Quedó por revisar: míralo en Respaldo.` : base;
+  if (it.estado === "rechazado") return `${base}. El servidor no lo aceptó y no cuenta en el stock: míralo en Por subir.`;
+  if (it.estado === "confirmado") return it.revision ? `${base}. Quedó por revisar: míralo en Por subir.` : base;
   return `${base}. Guardado en este dispositivo: se subirá con su fecha y hora originales.`;
 }
 

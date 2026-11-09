@@ -1,6 +1,5 @@
-import { AnimatePresence, motion } from "framer-motion";
-import { FileDown, Loader2, X } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { AlertTriangle, CalendarClock, CheckCircle2, FileDown, Loader2, X, type LucideIcon } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { filtrarPorEmpresa } from "../lib/derive";
 import { faltaMigracion } from "../lib/errores";
 import { fechaCorta, hoyISO } from "../lib/format";
@@ -22,6 +21,13 @@ const TONO: Record<Semaforo, string> = {
   verde: "bg-ok-soft text-ok",
   amarillo: "bg-warn-soft text-warn",
   rojo: "bg-red-soft text-red",
+};
+
+/** El color nunca va solo: cada estado lleva su icono y su texto. */
+const ICONO: Record<Semaforo, LucideIcon> = {
+  verde: CheckCircle2,
+  amarillo: CalendarClock,
+  rojo: AlertTriangle,
 };
 
 const dias = (n: number) => `${n} ${n === 1 ? "día" : "días"}`;
@@ -46,7 +52,7 @@ function leerDescartado(): Descartado | null {
 }
 
 /** Aviso del reporte semanal: aparece desde el miércoles y se va al descargar el reporte. */
-export function AvisoReporte({ todos, autor, avisar, recargar, errorDatos, dueno }: { todos: Datos; autor: string; avisar: (texto: string, error?: boolean) => void; recargar: () => Promise<Datos | null>; errorDatos: boolean; dueno: string | null }) {
+export function AvisoReporte({ todos, autor, avisar, recargar, errorDatos, dueno, sinPendiente }: { todos: Datos; autor: string; avisar: (texto: string, error?: boolean) => void; recargar: () => Promise<Datos | null>; errorDatos: boolean; dueno: string | null; /** Lo que se muestra cuando no hay nada que hacer. */ sinPendiente?: ReactNode }) {
   const [hoy, setHoy] = useState(hoyISO);
   const [ahora, setAhora] = useState(() => Date.now());
   const [descartado, setDescartado] = useState(leerDescartado);
@@ -184,38 +190,32 @@ export function AvisoReporte({ todos, autor, avisar, recargar, errorDatos, dueno
   const oculto = descartado?.dia === hoy && (estado?.semaforo !== "rojo" || ahora - descartado.ts < HORAS_ROJO * 3_600_000);
   const tx = estado && toca ? textos(estado) : null;
 
+  if (!(estado && tx && !oculto)) return <>{sinPendiente}</>;
+  const Icono = ICONO[estado.semaforo];
+
   return (
-    <AnimatePresence initial={false}>
-      {estado && tx && !oculto && (
-        <motion.div
-          role="status"
-          data-testid="aviso-reporte"
-          initial={{ opacity: 0, y: -8 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -8 }}
-          transition={{ duration: 0.2 }}
-          className={cn("no-print mb-5 flex flex-wrap items-center gap-x-4 gap-y-3 rounded-2xl px-4 py-3.5", TONO[estado.semaforo])}
-        >
-          <div className="min-w-[14rem] flex-1">
-            <p className="text-[14px] font-semibold">{tx.titulo}</p>
-            <p className="mt-0.5 text-justify text-[13px]">{fotosFaltantes ?? tx.detalle}</p>
-          </div>
-          <div className="flex items-center gap-2">
-            {faltaMarcar && (
-              <Boton onClick={marcarHecho} disabled={trabajando !== null}>
-                {trabajando === "marcar" && <Loader2 className="size-4 animate-spin" />} Marcar como hecho
-              </Boton>
-            )}
-            <Boton variante="ink" onClick={descargar} disabled={trabajando !== null}>
-              {trabajando === "bajar" ? <Loader2 className="size-4 animate-spin" /> : <FileDown className="size-4" />}
-              {trabajando === "bajar" ? "Preparando…" : "Descargar reporte"}
-            </Boton>
-            <button type="button" onClick={ahoraNo} aria-label="Ahora no" title="Ahora no" className="grid size-10 place-items-center rounded-xl transition hover:bg-black/5">
-              <X className="size-4" />
-            </button>
-          </div>
-        </motion.div>
-      )}
-    </AnimatePresence>
+    <div role="status" data-testid="aviso-reporte" className={cn("no-print rounded-lg px-4 py-4", TONO[estado.semaforo])}>
+      <div className="flex items-start gap-3">
+        <Icono className="mt-0.5 size-6 shrink-0" aria-hidden />
+        <div className="min-w-0 flex-1">
+          <p className="text-left text-[18px] font-semibold leading-[26px]">{tx.titulo}</p>
+          <p className="mt-0.5 text-[16px] leading-6">{fotosFaltantes ?? tx.detalle}</p>
+        </div>
+        <button type="button" onClick={ahoraNo} aria-label="Ahora no" title="Ahora no" className="-mr-2 -mt-2 grid size-14 shrink-0 place-items-center rounded-lg hover:bg-ink/5">
+          <X className="size-5" aria-hidden />
+        </button>
+      </div>
+      <div className="mt-3 flex flex-wrap gap-3">
+        <Boton variante="ink" className="min-h-16 flex-1 text-[18px] sm:flex-none" onClick={descargar} disabled={trabajando !== null}>
+          {trabajando === "bajar" ? <Loader2 className="size-5 animate-spin" aria-hidden /> : <FileDown className="size-5" aria-hidden />}
+          {trabajando === "bajar" ? "Preparando…" : "Descargar reporte"}
+        </Boton>
+        {faltaMarcar && (
+          <Boton className="min-h-16 flex-1 sm:flex-none" onClick={marcarHecho} disabled={trabajando !== null}>
+            {trabajando === "marcar" && <Loader2 className="size-5 animate-spin" aria-hidden />} Marcar como hecho
+          </Boton>
+        )}
+      </div>
+    </div>
   );
 }

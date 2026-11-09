@@ -1,10 +1,11 @@
-import { motion } from "framer-motion";
-import { ChevronRight, Shirt, UserCheck, UserPlus, Users } from "lucide-react";
+import { ChevronRight, UserPlus, Users } from "lucide-react";
 import { useMemo, useState } from "react";
-import { Card, Chip, CountUp, Kicker, Tabla, Vacio, td, th } from "../components/ui";
+import { Card, Chip, Vacio, presion } from "../components/ui";
 import { entero, fechaLarga, iniciales, titulo } from "../lib/format";
 import { cn } from "../lib/utils";
 import type { VistaProps } from "./tipos";
+
+const personas = (n: number) => `${entero(n)} ${n === 1 ? "persona" : "personas"}`;
 
 export function Trabajadores({ todos, abrirTrabajador, editor, abrirNuevoTrabajador }: VistaProps) {
   const [area, setArea] = useState("TODAS");
@@ -32,90 +33,35 @@ export function Trabajadores({ todos, abrirTrabajador, editor, abrirNuevoTrabaja
 
   const totalPrendas = lista.reduce((a, t) => a + t.prendas_recibidas, 0);
   const conEntregas = lista.filter((t) => t.prendas_recibidas > 0).length;
-  const maxPrendas = Math.max(1, ...visibles.map((t) => t.prendas_recibidas));
+  const sinEntregas = lista.length - conEntregas;
   const maxArea = Math.max(1, ...areas.map((a) => a.prendas));
-
-  const kpis = [
-    { etiqueta: "Trabajadores", valor: lista.length, nota: `en ${areas.length} áreas`, icono: <Users className="size-4" /> },
-    { etiqueta: "Unidades entregadas", valor: totalPrendas, nota: "en total, desde que se llevan registros", icono: <Shirt className="size-4" /> },
-    {
-      etiqueta: "Con entregas",
-      valor: conEntregas,
-      nota: lista.length - conEntregas === 0 ? "todos ya recibieron algo" : `${lista.length - conEntregas} aún no reciben nada`,
-      icono: <UserCheck className="size-4" />,
-    },
-  ];
 
   return (
     <div className="space-y-5">
+      {/* Las cifras van en una línea: lo que se busca aquí es a la persona. */}
+      <p className="text-[16px] leading-6 text-muted">
+        <b className="num text-ink">{entero(lista.length)}</b> {lista.length === 1 ? "trabajador" : "trabajadores"} en {entero(areas.length)} {areas.length === 1 ? "área" : "áreas"} ·{" "}
+        <b className="num text-ink">{entero(totalPrendas)}</b> unidades entregadas desde que se llevan registros ·{" "}
+        {sinEntregas === 0 ? "todos ya recibieron algo" : `${personas(sinEntregas)} sin entregas todavía`}
+      </p>
+
       {editor && (
         <button
           type="button"
           onClick={abrirNuevoTrabajador}
-          className="flex w-full items-center gap-3.5 rounded-2xl border border-line bg-surface p-4 text-left shadow-card transition hover:border-faint active:scale-[0.99] sm:w-auto sm:min-w-[22rem]"
+          className={cn("flex min-h-16 w-full items-center gap-4 rounded-lg border-2 border-action bg-surface px-4 py-3 text-left text-action sm:w-auto sm:min-w-[22rem]", presion)}
         >
-          <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-ink text-white">
-            <UserPlus className="size-5" />
-          </span>
+          <UserPlus className="size-7 shrink-0" aria-hidden />
           <span>
-            <span className="block text-[14.5px] font-semibold">Trabajador nuevo</span>
-            <span className="block text-[12px] text-muted">Agrégalo para poder anotarle entregas</span>
+            <span className="block text-[18px] font-semibold leading-[26px]">Trabajador nuevo</span>
+            <span className="block text-[16px] leading-6 text-muted">Agrégalo para poder anotarle entregas</span>
           </span>
         </button>
       )}
-      <div className="grid grid-cols-1 gap-5 sm:grid-cols-3">
-        {kpis.map((k) => (
-          <Card key={k.etiqueta} className="p-5">
-            <div className="flex items-center justify-between text-faint">
-              <Kicker>{k.etiqueta}</Kicker>
-              {k.icono}
-            </div>
-            <p className="display mt-3 text-4xl font-semibold leading-none">
-              <CountUp value={k.valor} />
-            </p>
-            <p className="mt-2.5 text-[12.5px] text-muted">{k.nota}</p>
-          </Card>
-        ))}
-      </div>
 
-      <div className="grid grid-cols-1 gap-5 xl:grid-cols-3">
-        <Card className="p-6 order-2">
-          <Kicker>Por área</Kicker>
-          <h2 className="display mt-1 text-lg font-semibold">Unidades entregadas por área</h2>
-          <ul className="mt-4 space-y-4">
-            {areas.map((a) => (
-              <li key={a.area}>
-                <button
-                  type="button"
-                  onClick={() => setArea(area === a.area ? "TODAS" : a.area)}
-                  className={cn(
-                    "-mx-2 block w-[calc(100%+16px)] rounded-xl px-2 py-1.5 text-left transition hover:bg-ground",
-                    area === a.area && "bg-ground",
-                  )}
-                >
-                  <div className="flex items-baseline justify-between gap-3">
-                    <span className="truncate text-[13.5px] font-semibold">{titulo(a.area)}</span>
-                    <span className="num text-[13px] font-semibold">{entero(a.prendas)}</span>
-                  </div>
-                  <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-line-2">
-                    <motion.div
-                      className="h-full rounded-full bg-ink"
-                      initial={{ width: 0 }}
-                      animate={{ width: `${(a.prendas / maxArea) * 100}%` }}
-                      transition={{ duration: 0.9, ease: [0.16, 1, 0.3, 1] }}
-                    />
-                  </div>
-                  <p className="mt-1.5 text-[12px] text-muted">
-                    {a.personas} {a.personas === 1 ? "persona" : "personas"}
-                  </p>
-                </button>
-              </li>
-            ))}
-          </ul>
-        </Card>
-
-        <div className="space-y-4 order-1 xl:col-span-2">
-          <div className="flex flex-wrap gap-2">
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
+        <div className="space-y-4 lg:col-span-2">
+          <div className="flex flex-wrap gap-3" role="group" aria-label="Filtrar por área">
             <Chip activo={area === "TODAS"} onClick={() => setArea("TODAS")}>
               Todas las áreas
             </Chip>
@@ -125,59 +71,64 @@ export function Trabajadores({ todos, abrirTrabajador, editor, abrirNuevoTrabaja
               </Chip>
             ))}
           </div>
-          <Card className="overflow-hidden p-2">
+
+          <Card className="overflow-hidden">
             {visibles.length === 0 ? (
-              <Vacio icono={<Users className="size-5" />} titulo="No hay trabajadores aquí" texto="Todavía no hay personal cargado." />
+              <Vacio icono={<Users className="size-6" />} titulo="No hay trabajadores aquí" texto="Todavía no hay personal cargado." />
             ) : (
-              <Tabla etiqueta="Trabajadores y unidades recibidas" minAncho={560}>
-                <thead className="border-b border-line-2">
-                  <tr>
-                    <th className={th} scope="col">Trabajador</th>
-                    <th className={th} scope="col">Unidades recibidas</th>
-                    <th className={th} scope="col">Última entrega</th>
-                    <th className={th} scope="col"><span className="sr-only">Detalle</span></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {visibles.map((t) => (
-                    <tr
-                      key={t.trabajador}
-                      onClick={() => abrirTrabajador(t.trabajador)}
-                      className="cursor-pointer border-b border-line-2 transition-colors last:border-0 hover:bg-ground/70"
-                    >
-                      <td className={td}>
-                        <div className="flex items-center gap-3">
-                          <span className="grid size-9 shrink-0 place-items-center rounded-full bg-ground text-[12px] font-semibold text-muted">
-                            {iniciales(t.trabajador)}
-                          </span>
-                          <div className="min-w-0">
-                            {/* El clic sube a la fila; el botón permite abrirla con el teclado. */}
-                            <button type="button" className="block max-w-full truncate text-left text-[13.5px] font-semibold hover:underline">
-                              {titulo(t.trabajador)}
-                            </button>
-                            <p className="text-[12px] text-muted">{titulo(t.area ?? "Sin área")}</p>
-                          </div>
-                        </div>
-                      </td>
-                      <td className={td}>
-                        <div className="flex items-center gap-3">
-                          <span className="num w-8 text-right text-[15px] font-semibold">{entero(t.prendas_recibidas)}</span>
-                          <div className="h-1.5 w-24 overflow-hidden rounded-full bg-line-2">
-                            <div className="h-full rounded-full bg-ink" style={{ width: `${(t.prendas_recibidas / maxPrendas) * 100}%` }} />
-                          </div>
-                        </div>
-                      </td>
-                      <td className={cn(td, "text-[13px] text-muted")}>{fechaLarga(t.ultima_entrega)}</td>
-                      <td className={cn(td, "text-right")}>
-                        <ChevronRight className="ml-auto size-4 text-faint" />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </Tabla>
+              <ul className="divide-y divide-line-2" aria-label="Trabajadores y unidades recibidas">
+                {visibles.map((t) => (
+                  <li key={t.trabajador}>
+                    <button type="button" onClick={() => abrirTrabajador(t.trabajador)} className="flex min-h-16 w-full items-center gap-3 px-4 py-3 text-left hover:bg-ground focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-action">
+                      <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-ground text-[14px] font-semibold text-muted" aria-hidden>
+                        {iniciales(t.trabajador)}
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="line-clamp-2 text-[18px] font-semibold leading-[26px] [overflow-wrap:anywhere]">{titulo(t.trabajador)}</span>
+                        {/* Baja de línea en vez de cortarse: la fecha de la última entrega es lo que se viene a mirar. */}
+                        <span className="block text-[16px] leading-6 text-muted [overflow-wrap:anywhere]">
+                          {titulo(t.area ?? "Sin área")}
+                          {t.ultima_entrega ? ` · última entrega ${fechaLarga(t.ultima_entrega)}` : t.prendas_recibidas === 0 ? " · sin entregas" : ""}
+                        </span>
+                      </span>
+                      <span className="shrink-0 text-right">
+                        <span className="num block text-[24px] font-semibold leading-[26px]">{entero(t.prendas_recibidas)}</span>
+                        <span className="block text-[14px] leading-5 text-muted">{t.prendas_recibidas === 1 ? "unidad" : "unidades"}</span>
+                      </span>
+                      <ChevronRight className="size-5 shrink-0 text-faint" aria-hidden />
+                    </button>
+                  </li>
+                ))}
+              </ul>
             )}
           </Card>
         </div>
+
+        {/* Comparar áreas es tarea de escritorio. En el celular las áreas ya están en los filtros. */}
+        <Card className="hidden p-6 lg:block">
+          <h2 className="text-[18px] font-semibold leading-[26px]">Unidades entregadas por área</h2>
+          <ul className="mt-4 space-y-2">
+            {areas.map((a) => (
+              <li key={a.area}>
+                <button
+                  type="button"
+                  onClick={() => setArea(area === a.area ? "TODAS" : a.area)}
+                  aria-pressed={area === a.area}
+                  className={cn("-mx-2 block min-h-14 w-[calc(100%+16px)] rounded-lg px-2 py-2 text-left hover:bg-ground", area === a.area && "bg-ground")}
+                >
+                  <span className="flex items-baseline justify-between gap-3">
+                    <span className="truncate text-[16px] font-semibold">{titulo(a.area)}</span>
+                    <span className="num text-[16px] font-semibold">{entero(a.prendas)}</span>
+                  </span>
+                  <span className="mt-2 block h-2 overflow-hidden bg-line-2" aria-hidden>
+                    <span className="block h-full origin-left bg-action" style={{ transform: `scaleX(${a.prendas / maxArea})` }} />
+                  </span>
+                  <span className="mt-1.5 block text-[14px] text-muted">{personas(a.personas)}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </Card>
       </div>
     </div>
   );

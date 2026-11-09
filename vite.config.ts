@@ -1,9 +1,15 @@
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { VitePWA } from "vite-plugin-pwa";
 
 export default defineConfig({
+  resolve: {
+    // El tiempo real de Supabase se trae aparte, después de abrir (ver src/lib/tiempoRealDiferido.ts).
+    // Solo cambia la importación exacta: la ruta completa del paquete sigue llegando al original.
+    alias: [{ find: /^@supabase\/realtime-js$/, replacement: fileURLToPath(new URL("./src/lib/tiempoRealDiferido.ts", import.meta.url)) }],
+  },
   plugins: [
     react(),
     tailwindcss(),
@@ -21,8 +27,8 @@ export default defineConfig({
         start_url: "/",
         scope: "/",
         display: "standalone",
-        theme_color: "#F1F2F4",
-        background_color: "#F1F2F4",
+        theme_color: "#004257",
+        background_color: "#f1f5f7",
         icons: [
           { src: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
           { src: "/icons/icon-512.png", sizes: "512x512", type: "image/png" },
