@@ -1,9 +1,10 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import { animate } from "framer-motion";
 import { X } from "lucide-react";
-import { useEffect, useRef, useState, type ButtonHTMLAttributes, type HTMLAttributes, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ButtonHTMLAttributes, type HTMLAttributes, type ReactNode } from "react";
 import { ESTADO_TEXTO } from "../lib/derive";
 import { entero } from "../lib/format";
+import { marcarEdicion } from "../lib/offline/recarga";
 import type { Estado } from "../lib/types";
 import { cn } from "../lib/utils";
 
@@ -131,6 +132,13 @@ export function Ventana({
   /** Botones que quedan siempre a la vista, debajo del contenido que se desplaza. */
   pie?: ReactNode;
 }) {
+  // Con una ventana abierta, una versión nueva espera: recargar borraría lo que se está llenando.
+  const clave = useId();
+  useEffect(() => {
+    marcarEdicion(clave, abierta);
+    return () => marcarEdicion(clave, false);
+  }, [clave, abierta]);
+
   return (
     <Dialog.Root open={abierta} onOpenChange={(o) => !o && alCerrar()}>
       <Dialog.Portal>

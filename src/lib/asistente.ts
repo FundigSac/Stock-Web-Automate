@@ -1,5 +1,5 @@
 import type { GrupoProducto } from "./derive";
-import { nombreProducto, nombreTalla, titulo } from "./format";
+import { norm, nombreProducto, nombreTalla, titulo } from "./format";
 
 export type Genero = "HOMBRE" | "MUJER" | "UNISEX";
 
@@ -39,12 +39,6 @@ export type Orden = {
   /** Palabras que describen el producto (o el nombre, al crear). */
   palabras: string[];
 };
-
-export const norm = (s: string | null | undefined) =>
-  (s ?? "")
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .toLowerCase();
 
 const set = (...a: string[]) => new Set(a);
 
@@ -250,7 +244,8 @@ export function entender(texto: string, ctx?: Contexto): Orden {
     if (hayPedido && (hayNumero || hayPedir || dicePorNuevo)) return "pedir" as const;
     if (hayPedido) return "ver_pedidos" as const;
     if (hayPedir) return "pedir" as const;
-    if ((hayBajo || orden.incluirSin) && !hayNumero) return "bajo" as const;
+    // "falta entregar un polo a Diego" es una entrega, no una consulta de lo que se acaba.
+    if ((hayBajo || orden.incluirSin) && !hayNumero && !haySalida && orden.persona.length === 0) return "bajo" as const;
     if (haySalida && !hayAgregar) return "salida" as const;
     if (nombraTrabajador && (dicePorNuevo || tiene(V_CREAR))) return "crear_trabajador" as const;
     if (dicePorNuevo && !hayNumero) return "crear" as const;
@@ -377,30 +372,9 @@ export function sugerirProductos(grupos: GrupoProducto[], palabras: string[]): G
 /** Talla del producto que corresponde a "m", "xl", "32", "unica". */
 export function tallaDe(g: GrupoProducto, pedida: string) {
   const p = norm(pedida);
-  return g.tallas.find((t) => norm(nombreTalla(t.talla)) === p) ?? null;
-}
-
-const TALLA_SUELTA = "(?:xs|s|m|l|xl|xxl|xxxl|unica)";
-
-/**
- * Una frase puede traer varios pedidos: "agrega 5 polo manga larga fundigsac talla M y 3 camisero blanco hombre talla L".
- * Se corta cuando, despues de "y" o de una coma, empieza otra cantidad con otro producto
- * ("5 M y 3 L" NO se corta: es la misma prenda en dos tallas).
- */
-export function entenderVarios(texto: string, ctx?: Contexto): Orden[] {
-  const base = entender(texto, ctx);
-  if (base.accion !== "agregar" && base.accion !== "pedir") return [base];
-  const limpio = norm(texto)
-    .replace(/[^a-z0-9&/,;+ ]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-  const corte = new RegExp(String.raw`\s*(?:,|;|\+|\sy\s|\s(?:ademas|tambien|luego|despues)\s)\s*(?=\d+\s+(?!` + TALLA_SUELTA + String.raw`\b))`, "g");
-  const partes = limpio.replace(corte, "|").split("|").map((p) => p.trim()).filter(Boolean);
-  if (partes.length <= 1) return [base];
-  const ordenes = partes.map((p) => entender(p, ctx));
-  // La primera parte manda: si dice "pide", todas son pedidos.
-  const accion = ordenes[0].accion === "pedir" ? "pedir" : "agregar";
-  return ordenes.map((o) => ({ ...o, accion: o.accion === "agregar" || o.accion === "pedir" ? accion : o.accion }));
+  // Dos variantes con la misma talla (C/F y S/F): no se adivina cuál es.
+  const iguales = g.tallas.filter((t) => norm(nombreTalla(t.talla)) === p);
+  return iguales.length === 1 ? iguales[0] : null;
 }
 
 /** Trabajadores cuyo nombre contiene TODAS las palabras dichas ("diego" -> Diego Ulises Soto Quispe). */
@@ -419,16 +393,9 @@ export function nombresConocidos(trabajadores: { trabajador: string }[]): Set<st
   return out;
 }
 
-/** Palabras del nombre de todos los productos (para corregir errores de dedo: "camsiero" -> "camisero"). */
-function vocabulario(grupos: GrupoProducto[]): string[] {
-  const v = new Set<string>();
-  for (const g of grupos) for (const w of norm(nombreProducto(g.producto, g.empresa)).split(/[^a-z0-9&]+/)) if (w.length >= 3) v.add(w);
-  return Array.from(v);
-}
-
 /** Cada palabra que no existe se cambia por la parecida mas cercana del catalogo (una letra de diferencia, dos si es larga). */
 export function corregirPalabras(grupos: GrupoProducto[], palabras: string[]): string[] {
-  const vocab = vocabulario(grupos);
+  const vocab = Array.from(vocabularioCatalogo(grupos));
   return palabras.map((w) => {
     if (w.length < 4 || vocab.some((x) => coincide(x, w))) return w;
     let mejor = w;
@@ -462,7 +429,7 @@ export function buscarFlexible(grupos: GrupoProducto[], f: Filtro): { grupos: Gr
   return { grupos: [], palabras: corregidas, ignoradas: [] };
 }
 
-/** Todas las palabras de los nombres de producto (para no confundirlas con verbos mal escritos). */
+/** Todas las palabras de los nombres de producto: corrigen errores de dedo y no se confunden con verbos mal escritos. */
 export function vocabularioCatalogo(grupos: GrupoProducto[]): Set<string> {
   const v = new Set<string>();
   for (const g of grupos) for (const w of norm(nombreProducto(g.producto, g.empresa)).split(/[^a-z0-9&]+/)) if (w.length >= 3) v.add(w);

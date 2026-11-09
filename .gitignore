@@ -13,3 +13,6 @@ addin-clave.txt
 # Copias de datos y archivos de prueba locales
 respaldo-*.json
 prueba-*.png
+dist-e2e
+test-results
+playwright-report

@@ -1,11 +1,12 @@
-import type { Datos, Estado, Movimiento, StockItem } from "./types";
-import { entero, fechaLarga, hoyISO, sumarDias, nombreTalla } from "./format";
+import type { Datos, Estado, Movimiento, Salida, StockItem } from "./types";
+import { entero, fechaCorta, fechaLarga, hoyISO, sumarDias, nombreTalla } from "./format";
+import { fechaLima, horaLima } from "./tiempo";
 
 export const ESTADO_TEXTO: Record<Estado, string> = {
   ok: "Con stock",
   bajo: "Por agotarse",
   sin: "Sin stock",
-  revisar: "Revisar",
+  revisar: "Saldo negativo",
 };
 
 export function estadoDe(queda: number, minimo: number): Estado {
@@ -25,6 +26,13 @@ export function rangoTalla(t: string | null): number {
   if (n) return 100 + Number(n[1]);
   if (u.includes("ESPECIAL")) return 900;
   return 1000;
+}
+
+/** Porcentaje que no engaña en los extremos: 100 solo si son todos y 0 solo si no hay ninguno. */
+export function porcentaje(parte: number, total: number): number {
+  if (total <= 0 || parte <= 0) return 0;
+  if (parte >= total) return 100;
+  return Math.min(99, Math.max(1, Math.round((parte / total) * 100)));
 }
 
 export type Resumen = {
@@ -64,7 +72,7 @@ export function resumir(items: StockItem[], minimo: number): Resumen {
     sin,
     revisar,
     disponibles,
-    pctDisponible: items.length ? Math.round((disponibles / items.length) * 100) : 0,
+    pctDisponible: porcentaje(disponibles, items.length),
     ultima,
   };
 }
@@ -133,10 +141,16 @@ export function movimientosDe(d: Datos, conAnulados = false): Movimiento[] {
       motivo: e.anulado_motivo,
       anuladoPor: e.anulado_por,
       registradoPor: e.creado_por,
-      creado: e.created_at,
+      creado: e.capturado_en ?? e.created_at,
+      capturado: e.capturado_en ?? null,
+      origenHora: e.capturado_origen ?? null,
+      subido: e.subido_en ?? null,
       foto: e.foto_path ?? null,
-      etiqueta: null,
-      cambioRef: null,
+      etiqueta: e.etiqueta ?? null,
+      cambioRef: e.cambio_ref ?? null,
+      revisar: e.revisar_motivo ?? null,
+      pendiente: e.pendiente === true,
+      sinCopia: e.sinCopia === true,
     });
   }
   for (const s of d.salidas) {
@@ -156,14 +170,37 @@ export function movimientosDe(d: Datos, conAnulados = false): Movimiento[] {
       motivo: s.anulado_motivo,
       anuladoPor: s.anulado_por,
       registradoPor: s.creado_por,
-      creado: s.created_at,
+      creado: s.capturado_en ?? s.created_at,
+      capturado: s.capturado_en ?? null,
+      origenHora: s.capturado_origen ?? null,
+      subido: s.subido_en ?? null,
       foto: s.foto_path ?? null,
-      etiqueta: null,
-      cambioRef: null,
+      etiqueta: s.etiqueta ?? null,
+      cambioRef: s.cambio_ref ?? null,
+      revisar: s.revisar_motivo ?? null,
+      pendiente: s.pendiente === true,
+      sinCopia: s.sinCopia === true,
     });
   }
-  // Mas recientes primero (por fecha y, dentro del dia, por hora de registro).
-  return out.sort((a, b) => b.fecha.localeCompare(a.fecha) || b.creado.localeCompare(a.creado));
+  // Mas recientes primero (por fecha y, dentro del dia, por la hora de la foto o del registro).
+  // Se comparan instantes y no textos: unas horas vienen con -05:00 y otras en UTC.
+  return out.sort((a, b) => b.fecha.localeCompare(a.fecha) || Date.parse(b.creado) - Date.parse(a.creado));
+}
+
+/** Cuándo pasó un movimiento. La hora de la foto y la fecha del registro son dos datos y no se mezclan. */
+export function momentoMovimiento(m: Pick<Movimiento, "fecha" | "creado" | "foto" | "capturado" | "origenHora" | "pendiente">): string {
+  if (m.capturado && m.origenHora !== "registro" && (m.foto || m.pendiente)) {
+    const de = m.origenHora === "archivo" ? "Archivo del" : m.origenHora === "ahora" ? "Elegida el" : "Foto del";
+    return `${de} ${fechaCorta(fechaLima(m.capturado))}, ${horaLima(m.capturado)} · Registrado ${fechaLarga(m.fecha)}`;
+  }
+  return `${fechaLarga(m.fecha)} · registrado a las ${horaLima(m.creado)}`;
+}
+
+/** Entregas de una persona, las más recientes primero. Un cambio de prenda no cuenta como entrega, igual que en el PDF. Dentro del día manda la hora real: el id solo dice en qué orden subieron. */
+export function entregasDe(salidas: Salida[], nombre: string | null): Salida[] {
+  return salidas
+    .filter((s) => s.trabajador_cliente === nombre && !s.anulado && !s.etiqueta)
+    .sort((a, b) => b.fecha.localeCompare(a.fecha) || Date.parse(b.capturado_en ?? b.created_at) - Date.parse(a.capturado_en ?? a.created_at));
 }
 
 export type Dia = { fecha: string; entradas: number; salidas: number };
@@ -205,17 +242,17 @@ export function lecturas(r: Resumen, filas: FilaEmpresa[], movs: Movimiento[]): 
   if (r.articulos === 0) return ["Todavía no hay productos en el catálogo."];
   if (r.disponibles === 0) {
     out.push(
-      `Los ${entero(r.articulos)} artículos están sin stock. Registra una entrada con el botón Registrar y aparecerá aquí al instante.`,
+      `Las ${entero(r.articulos)} tallas están sin stock. Registra una entrada con el botón Registrar y aparecerá aquí al instante.`,
     );
   } else {
-    out.push(`${entero(r.disponibles)} de ${entero(r.articulos)} artículos tienen stock (${r.pctDisponible}%).`);
+    out.push(`${entero(r.disponibles)} de ${entero(r.articulos)} tallas tienen stock (${r.pctDisponible}%).`);
   }
-  if (r.bajo > 0) out.push(`${entero(r.bajo)} artículos están por agotarse: conviene reponerlos pronto.`);
+  if (r.bajo > 0) out.push(`${entero(r.bajo)} ${r.bajo === 1 ? "talla está" : "tallas están"} por agotarse: hay que reponerlas pronto.`);
   if (r.revisar > 0)
-    out.push(`${entero(r.revisar)} artículos tienen saldo negativo: se entregó más de lo registrado. Revisa las salidas en Movimientos y anula las que estén mal.`);
+    out.push(`${entero(r.revisar)} ${r.revisar === 1 ? "talla tiene" : "tallas tienen"} saldo negativo: se entregó más de lo registrado. Revisa las salidas en Movimientos y anula las que estén mal.`);
   const peor = [...filas].filter((f) => f.articulos > 0).sort((a, b) => a.pctDisponible - b.pctDisponible)[0];
   if (peor && peor.pctDisponible < 100 && filas.length > 1 && r.disponibles > 0)
-    out.push(`${peor.empresa} es la que menos disponibilidad tiene (${peor.pctDisponible}% de sus artículos con stock).`);
+    out.push(`${peor.empresa} es la empresa con menos tallas con stock (${peor.pctDisponible}%).`);
   const conFecha = movs.filter((m) => !m.anulado && m.cantidad > 0);
   if (conFecha.length === 0) out.push("Aún no hay movimientos registrados.");
   else out.push(`Último movimiento anotado: ${fechaLarga(conFecha[0].fecha)}.`);

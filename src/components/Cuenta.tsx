@@ -117,11 +117,12 @@ function ClaveDialog({ abierto, alCerrar, avisar }: { abierto: boolean; alCerrar
 }
 
 /** Boton "Entrar" o, con sesion iniciada, el menu de la cuenta. */
-export function Cuenta({ avisar }: { avisar: (t: string) => void }) {
-  const { sesion, email, editor, cargando, salir } = useAuth();
+export function Cuenta({ avisar, puede, porSubir }: { avisar: (t: string) => void; puede: boolean; porSubir: number }) {
+  const { sesion, email, cargando, saliendo, salir } = useAuth();
   const [entrando, setEntrando] = useState(false);
   const [claveAbierta, setClaveAbierta] = useState(false);
   const [menu, setMenu] = useState(false);
+  const [confirmarSalida, setConfirmarSalida] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -156,10 +157,11 @@ export function Cuenta({ avisar }: { avisar: (t: string) => void }) {
         onClick={() => setMenu((v) => !v)}
         aria-haspopup="menu"
         aria-expanded={menu}
-        className="flex h-10 items-center gap-2 rounded-xl border border-line bg-surface pl-1.5 pr-3 text-sm font-semibold transition hover:bg-ground"
+        disabled={saliendo}
+        className="flex h-10 items-center gap-2 rounded-xl border border-line bg-surface pl-1.5 pr-3 text-sm font-semibold transition hover:bg-ground disabled:opacity-60"
       >
-        <span className="grid size-7 place-items-center rounded-lg bg-ink text-[11px] font-semibold text-white">{iniciales(email ?? "?")}</span>
-        <span className="hidden max-w-[120px] truncate sm:inline">{(email ?? "").split("@")[0]}</span>
+        <span className="grid size-7 place-items-center rounded-lg bg-ink text-[11px] font-semibold text-white">{saliendo ? <Loader2 className="size-3.5 animate-spin" /> : iniciales(email ?? "?")}</span>
+        <span className="hidden max-w-[120px] truncate sm:inline">{saliendo ? "Cerrando sesión…" : (email ?? "").split("@")[0]}</span>
         <ChevronDown className="size-3.5 text-faint" />
       </button>
       <AnimatePresence>
@@ -175,8 +177,8 @@ export function Cuenta({ avisar }: { avisar: (t: string) => void }) {
             <div className="px-3 pb-2 pt-2.5">
               <p className="truncate text-[13px] font-semibold">{email}</p>
               <p className="mt-1 inline-flex items-center gap-1.5 text-[12px] text-muted">
-                {editor ? <ShieldCheck className="size-3.5 text-ok" /> : <Eye className="size-3.5" />}
-                {editor ? "Puede registrar y anular" : "Solo lectura: tu correo no está autorizado"}
+                {puede ? <ShieldCheck className="size-3.5 text-ok" /> : <Eye className="size-3.5" />}
+                {puede ? "Puede registrar y anular" : "Solo lectura: tu correo no está autorizado"}
               </p>
             </div>
             <button
@@ -195,7 +197,8 @@ export function Cuenta({ avisar }: { avisar: (t: string) => void }) {
               type="button"
               onClick={() => {
                 setMenu(false);
-                salir();
+                if (porSubir > 0) setConfirmarSalida(true);
+                else void salir();
               }}
               className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-[13.5px] font-semibold transition hover:bg-ground"
             >
@@ -205,6 +208,26 @@ export function Cuenta({ avisar }: { avisar: (t: string) => void }) {
         )}
       </AnimatePresence>
       <ClaveDialog abierto={claveAbierta} alCerrar={() => setClaveAbierta(false)} avisar={avisar} />
+      <Ventana abierta={confirmarSalida} alCerrar={() => setConfirmarSalida(false)} titulo="Tienes registros sin subir">
+        <p className="text-[13.5px] leading-relaxed text-muted">
+          {porSubir === 1 ? "Hay 1 registro" : `Hay ${porSubir} registros`} en este dispositivo que todavía no llegan al servidor. Si cierras sesión se quedan guardados aquí, pero solo se subirán cuando vuelvas a entrar con esta cuenta.
+        </p>
+        <div className="mt-4 flex flex-col gap-2 sm:flex-row-reverse">
+          <Boton
+            variante="ink"
+            className="h-12 sm:flex-1"
+            onClick={() => {
+              setConfirmarSalida(false);
+              void salir();
+            }}
+          >
+            Cerrar sesión igual
+          </Boton>
+          <Boton className="h-12 sm:flex-1" onClick={() => setConfirmarSalida(false)}>
+            Seguir con la sesión
+          </Boton>
+        </div>
+      </Ventana>
     </div>
   );
 }

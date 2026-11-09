@@ -1,3 +1,5 @@
+import type { OrigenHora } from "./offline/almacen";
+
 export type StockItem = {
   codigo: string;
   empresa: string;
@@ -19,10 +21,24 @@ type Auditoria = {
   anulado_at: string | null;
   creado_por: string | null;
   created_at: string;
-  /** "CAMBIO" cuando es una de las dos mitades de un cambio de prenda. */
+  /** "CAMBIO" en las filas históricas de un cambio de prenda. Hoy no se registran nuevas; siguen sin contar como compra ni entrega. */
   etiqueta: "CAMBIO" | null;
   /** Une las dos mitades de un mismo cambio. */
   cambio_ref: string | null;
+  /** Instante de la foto o del registro en el dispositivo. Las filas antiguas no lo tienen: vale created_at. */
+  capturado_en?: string | null;
+  /** De dónde salió esa hora: la foto (exif, camara), la fecha del archivo o el momento de registrar. */
+  capturado_origen?: OrigenHora | null;
+  /** Cuándo llegó la fila al servidor. Sirve para encontrar lo que subió tarde. */
+  subido_en?: string | null;
+  /** UUID generado en el dispositivo: llave contra duplicados. */
+  client_id?: string | null;
+  /** Por qué alguien debe mirar esta fila (saldo negativo, reloj desfasado). */
+  revisar_motivo?: string | null;
+  /** Solo en este dispositivo: todavía no llegó al servidor. */
+  pendiente?: true;
+  /** Ya llegó al servidor, pero la copia de este dispositivo aún no lo trae. */
+  sinCopia?: true;
 };
 
 export type Entrada = Auditoria & {
@@ -69,6 +85,10 @@ export type SyncState = {
   /** Dia en que se saco el ultimo reporte semanal. */
   reporte_ultimo: string | null;
   reporte_por: string | null;
+  /** Último sábado ya reportado. No existe hasta aplicar la migración de reportes. */
+  reporte_sabado?: string | null;
+  /** Momento exacto del último reporte, para saber qué llegó después. Misma migración. */
+  reporte_ultimo_en?: string | null;
 };
 
 /** Pedido de reposicion: se pide al proveedor y, cuando llega, se convierte en una entrada. */
@@ -109,6 +129,15 @@ export type Movimiento = {
   foto: string | null;
   etiqueta: "CAMBIO" | null;
   cambioRef: string | null;
+  revisar?: string | null;
+  /** Todavía no llegó al servidor: no se puede anular ni tiene foto en línea. */
+  pendiente?: boolean;
+  /** Ya está en el servidor, pero la copia local todavía no lo trae. */
+  sinCopia?: boolean;
+  /** Hora guardada con la foto. Las filas antiguas no la tienen. */
+  capturado?: string | null;
+  origenHora?: OrigenHora | null;
+  subido?: string | null;
 };
 
 export type Datos = {

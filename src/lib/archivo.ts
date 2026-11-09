@@ -29,8 +29,12 @@ export const esPdf = (f: File) => f.type === "application/pdf" || /\.pdf$/i.test
 /** Devuelve el texto del archivo, o lanza un error en español que se le muestra al usuario. */
 export async function textoDeArchivo(f: File): Promise<string> {
   const nombre = f.name.toLowerCase();
-  if (/\.xlsx$/.test(nombre)) return textoDeExcel(f);
-  if (/\.docx$/.test(nombre)) return textoDeWord(f);
+  const sinAbrir = (e: unknown): never => {
+    console.error("[archivo]", e);
+    throw new Error("El archivo está dañado o no se pudo abrir. Prueba guardándolo de nuevo.");
+  };
+  if (/\.xlsx$/.test(nombre)) return textoDeExcel(f).catch(sinAbrir);
+  if (/\.docx$/.test(nombre)) return textoDeWord(f).catch(sinAbrir);
   if (/\.(csv|txt)$/.test(nombre)) return f.text();
   if (/\.(xls|doc)$/.test(nombre)) throw new Error("Ese formato es muy antiguo. Guárdalo como .xlsx (Excel) o .docx (Word) y vuelve a subirlo.");
   throw new Error("No puedo leer ese tipo de archivo. Sube una foto, PDF, Excel (.xlsx), CSV o Word (.docx).");

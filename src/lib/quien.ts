@@ -1,17 +1,15 @@
 import { useCallback, useState } from "react";
 
-// v2: antes se guardaba cualquier nombre tecleado en pruebas; ahora todos parten de Ronald.
-const CLAVE = "stock_quien_v2";
-/** Quien registra casi siempre; se puede cambiar desde "Registrando como … · Cambiar". */
-export const QUIEN_POR_DEFECTO = "Ronald";
+// v3: ya no hay un nombre por defecto. Antes todo dispositivo nuevo firmaba como la misma persona.
+const CLAVE = "stock_quien_v3";
 
-/** Nombre de quien registra en este dispositivo: empieza en Ronald y se recuerda si se cambia. */
+/** Nombre de quien registra en este dispositivo, cuando no hay sesion: se pide la primera vez y se recuerda. */
 export function useQuien() {
   const [quien, setQuien] = useState(() => {
     try {
-      return window.localStorage.getItem(CLAVE) || QUIEN_POR_DEFECTO;
+      return window.localStorage.getItem(CLAVE) ?? "";
     } catch {
-      return QUIEN_POR_DEFECTO;
+      return "";
     }
   });
   const guardar = useCallback((v: string) => {

@@ -1,9 +1,9 @@
 import { motion } from "framer-motion";
-import { ArrowDown, ArrowUp, ChevronsUpDown, LayoutGrid, List, Package, PackagePlus, Plus, Search } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronsUpDown, LayoutGrid, List, Package, Plus, Search } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Card, Chip, EstadoBadge, Tabla, Vacio, td, th } from "../components/ui";
-import { agruparProductos, estadoDe, rangoTalla, resumir } from "../lib/derive";
-import { entero, fechaLarga, nombreProducto, nombreTalla, titulo } from "../lib/format";
+import { agruparProductos, ESTADO_TEXTO, estadoDe, rangoTalla, resumir } from "../lib/derive";
+import { entero, fechaLarga, norm, nombreProducto, nombreTallaEn, titulo } from "../lib/format";
 import type { Estado, StockItem } from "../lib/types";
 import { cn } from "../lib/utils";
 import type { VistaProps } from "./tipos";
@@ -19,7 +19,26 @@ const CHIP_TALLA: Record<Estado, string> = {
   revisar: "bg-red-soft text-red ring-1 ring-red/25",
 };
 
-export function Stock({ datos, minimo, abrirProducto, filtroEstado, setFiltroEstado, editor, abrirRegistro, abrirNuevoProducto, abrirAsistente, pedidosPendientes }: VistaProps) {
+type Orden = { col: Col; asc: boolean };
+
+function Cabecera({ col, children, derecha, orden, alOrdenar }: { col: Col; children: string; derecha?: boolean; orden: Orden; alOrdenar: (f: (o: Orden) => Orden) => void }) {
+  const activo = orden.col === col;
+  const Icono = !activo ? ChevronsUpDown : orden.asc ? ArrowUp : ArrowDown;
+  return (
+    <th scope="col" className={cn(th, derecha && "text-right")} aria-sort={activo ? (orden.asc ? "ascending" : "descending") : "none"}>
+      <button
+        type="button"
+        onClick={() => alOrdenar((o) => ({ col, asc: o.col === col ? !o.asc : true }))}
+        className={cn("inline-flex items-center gap-1.5 uppercase tracking-[0.12em] transition hover:text-ink", activo && "text-ink")}
+      >
+        {children}
+        <Icono className="size-3" />
+      </button>
+    </th>
+  );
+}
+
+export function Stock({ datos, minimo, abrirProducto, filtroEstado, setFiltroEstado, editor, abrirNuevoProducto, abrirAsistente, abrirPedidos, pedidosPendientes }: VistaProps) {
   const [q, setQ] = useState("");
   const [modo, setModo] = useState<"productos" | "lista">("productos");
   const [orden, setOrden] = useState<{ col: Col; asc: boolean }>({ col: "producto", asc: true });
@@ -28,11 +47,12 @@ export function Stock({ datos, minimo, abrirProducto, filtroEstado, setFiltroEst
   const todosGrupos = useMemo(() => agruparProductos(datos.stock, minimo), [datos.stock, minimo]);
   const porClave = useMemo(() => new Map(todosGrupos.map((g) => [g.clave, g])), [todosGrupos]);
 
-  const busca = q.trim().toLowerCase();
+  const busca = norm(q.trim());
   const pasa = (s: StockItem) => {
     if (filtroEstado !== "todos" && estadoDe(s.queda, minimo) !== filtroEstado) return false;
     if (!busca) return true;
-    return `${s.producto} ${s.codigo} ${s.talla ?? ""} ${s.empresa}`.toLowerCase().includes(busca);
+    // Se busca tanto lo que se ve en pantalla ("Pantalón con Fundigsac") como lo guardado ("PANTALON C/F").
+    return norm(`${nombreProducto(s.producto, s.empresa)} ${s.producto} ${s.codigo} ${s.talla ?? ""} ${s.empresa}`).includes(busca);
   };
 
   const filtrados = useMemo(() => datos.stock.filter(pasa), [datos.stock, filtroEstado, busca, minimo]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -67,60 +87,26 @@ export function Stock({ datos, minimo, abrirProducto, filtroEstado, setFiltroEst
 
   const cuenta = (e: Estado) => (e === "ok" ? r.ok : e === "bajo" ? r.bajo : e === "sin" ? r.sin : r.revisar);
 
-  function Cabecera({ col, children, derecha }: { col: Col; children: string; derecha?: boolean }) {
-    const activo = orden.col === col;
-    const Icono = !activo ? ChevronsUpDown : orden.asc ? ArrowUp : ArrowDown;
-    return (
-      <th
-        scope="col"
-        className={cn(th, derecha && "text-right")}
-        aria-sort={activo ? (orden.asc ? "ascending" : "descending") : "none"}
-      >
-        <button
-          type="button"
-          onClick={() => setOrden((o) => ({ col, asc: o.col === col ? !o.asc : true }))}
-          className={cn("inline-flex items-center gap-1.5 uppercase tracking-[0.12em] transition hover:text-ink", activo && "text-ink")}
-        >
-          {children}
-          <Icono className="size-3" />
-        </button>
-      </th>
-    );
-  }
+  const cab = { orden, alOrdenar: setOrden };
 
   let empresaPrevia = "";
 
   return (
     <div className="space-y-5">
       {editor && (
-        <div className="grid grid-cols-1 gap-3 min-[480px]:grid-cols-2">
-          <button
-            type="button"
-            onClick={abrirRegistro}
-            className="flex items-center gap-3.5 rounded-2xl bg-ink p-4 text-left text-white shadow-card transition active:scale-[0.99]"
-          >
-            <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-white/12">
-              <PackagePlus className="size-5" />
-            </span>
-            <span>
-              <span className="block text-[14.5px] font-semibold">Agregar o sacar stock</span>
-              <span className="block text-[12px] text-white/70">Entradas y salidas en pocos toques</span>
-            </span>
-          </button>
-          <button
-            type="button"
-            onClick={abrirNuevoProducto}
-            className="flex items-center gap-3.5 rounded-2xl border border-line bg-surface p-4 text-left shadow-card transition hover:border-faint active:scale-[0.99]"
-          >
-            <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-ground">
-              <Plus className="size-5" />
-            </span>
-            <span>
-              <span className="block text-[14.5px] font-semibold">Producto nuevo</span>
-              <span className="block text-[12px] text-muted">Con sus tallas y cantidades</span>
-            </span>
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={abrirNuevoProducto}
+          className="flex w-full items-center gap-3.5 rounded-2xl border border-line bg-surface p-4 text-left shadow-card transition hover:border-faint active:scale-[0.99] sm:w-auto sm:min-w-[22rem]"
+        >
+          <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-ground">
+            <Plus className="size-5" />
+          </span>
+          <span>
+            <span className="block text-[14.5px] font-semibold">Producto nuevo</span>
+            <span className="block text-[12px] text-muted">Con sus tallas y cantidades</span>
+          </span>
+        </button>
       )}
       {editor && (r.bajo > 0 || pedidosPendientes > 0) && (
         <div className="flex flex-wrap gap-2">
@@ -136,7 +122,7 @@ export function Stock({ datos, minimo, abrirProducto, filtroEstado, setFiltroEst
           {pedidosPendientes > 0 && (
             <button
               type="button"
-              onClick={() => abrirAsistente("Pedidos pendientes")}
+              onClick={abrirPedidos}
               className="inline-flex h-11 items-center gap-2 rounded-xl border border-line bg-surface px-4 text-[13px] font-semibold transition active:scale-[0.98]"
             >
               📦 {pedidosPendientes} {pedidosPendientes === 1 ? "pedido pendiente" : "pedidos pendientes"}
@@ -184,7 +170,7 @@ export function Stock({ datos, minimo, abrirProducto, filtroEstado, setFiltroEst
             .filter((e) => e !== "revisar" || r.revisar > 0)
             .map((e) => (
               <Chip key={e} activo={filtroEstado === e} onClick={() => setFiltroEstado(e)}>
-                {{ ok: "Con stock", bajo: "Por agotarse", sin: "Sin stock", revisar: "Revisar" }[e]}{" "}
+                {ESTADO_TEXTO[e]}{" "}
                 <span className="num opacity-70">{entero(cuenta(e))}</span>
               </Chip>
             ))}
@@ -209,7 +195,7 @@ export function Stock({ datos, minimo, abrirProducto, filtroEstado, setFiltroEst
         <Card>
           <Vacio
             icono={<Package className="size-5" />}
-            titulo="No hay artículos con ese filtro"
+            titulo="No hay tallas con ese filtro"
             texto="Prueba con otra búsqueda o cambia el estado de arriba."
           />
         </Card>
@@ -251,7 +237,7 @@ export function Stock({ datos, minimo, abrirProducto, filtroEstado, setFiltroEst
                           className={cn("inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[12px]", CHIP_TALLA[e])}
                           title={`${t.codigo}: quedan ${t.queda}`}
                         >
-                          <b className="font-semibold">{nombreTalla(t.talla)}</b>
+                          <b className="font-semibold">{nombreTallaEn(t.talla, porClave.get(g.clave)?.tallas ?? g.tallas)}</b>
                           <span className="num font-semibold opacity-90">{entero(t.queda)}</span>
                         </span>
                       );
@@ -268,15 +254,15 @@ export function Stock({ datos, minimo, abrirProducto, filtroEstado, setFiltroEst
         </div>
       ) : (
         <Card className="overflow-hidden p-2">
-          <Tabla etiqueta="Lista de artículos en stock" minAncho={760}>
+          <Tabla etiqueta="Lista de tallas en stock" minAncho={760}>
             <thead className="border-b border-line-2">
               <tr>
-                <Cabecera col="empresa">Empresa</Cabecera>
-                <Cabecera col="producto">Producto</Cabecera>
-                <Cabecera col="talla">Talla</Cabecera>
-                <Cabecera col="queda" derecha>Queda</Cabecera>
-                <Cabecera col="estado">Estado</Cabecera>
-                <Cabecera col="ultimo">Último mov.</Cabecera>
+                <Cabecera {...cab} col="empresa">Empresa</Cabecera>
+                <Cabecera {...cab} col="producto">Producto</Cabecera>
+                <Cabecera {...cab} col="talla">Talla</Cabecera>
+                <Cabecera {...cab} col="queda" derecha>Queda</Cabecera>
+                <Cabecera {...cab} col="estado">Estado</Cabecera>
+                <Cabecera {...cab} col="ultimo">Último mov.</Cabecera>
               </tr>
             </thead>
             <tbody>
@@ -291,10 +277,13 @@ export function Stock({ datos, minimo, abrirProducto, filtroEstado, setFiltroEst
                 >
                   <td className={cn(td, "text-[13px] text-muted")}>{titulo(s.empresa)}</td>
                   <td className={td}>
-                    <p className="text-[13.5px] font-semibold">{nombreProducto(s.producto, s.empresa)}</p>
+                    {/* El clic sube a la fila; el botón permite abrirla con el teclado. */}
+                    <button type="button" className="block text-left text-[13.5px] font-semibold hover:underline">
+                      {nombreProducto(s.producto, s.empresa)}
+                    </button>
                     <p className="num text-[11.5px] text-faint">{s.codigo}</p>
                   </td>
-                  <td className={cn(td, "text-[13px]")}>{nombreTalla(s.talla)}</td>
+                  <td className={cn(td, "text-[13px]")}>{nombreTallaEn(s.talla, porClave.get(`${s.empresa}||${s.producto}`)?.tallas ?? [s])}</td>
                   <td className={cn(td, "num text-right text-[15px] font-semibold")}>{entero(s.queda)}</td>
                   <td className={td}>
                     <EstadoBadge estado={estadoDe(s.queda, minimo)} />
@@ -307,7 +296,7 @@ export function Stock({ datos, minimo, abrirProducto, filtroEstado, setFiltroEst
         </Card>
       )}
       <p className="text-center text-xs text-faint">
-        Mostrando {entero(filtrados.length)} de {entero(r.articulos)} artículos
+        Mostrando {entero(filtrados.length)} de {entero(r.articulos)} tallas
       </p>
     </div>
   );

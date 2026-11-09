@@ -37,7 +37,7 @@ export function Trabajadores({ todos, abrirTrabajador, editor, abrirNuevoTrabaja
 
   const kpis = [
     { etiqueta: "Trabajadores", valor: lista.length, nota: `en ${areas.length} áreas`, icono: <Users className="size-4" /> },
-    { etiqueta: "Prendas entregadas", valor: totalPrendas, nota: "en total, desde que se llevan registros", icono: <Shirt className="size-4" /> },
+    { etiqueta: "Unidades entregadas", valor: totalPrendas, nota: "en total, desde que se llevan registros", icono: <Shirt className="size-4" /> },
     {
       etiqueta: "Con entregas",
       valor: conEntregas,
@@ -81,7 +81,7 @@ export function Trabajadores({ todos, abrirTrabajador, editor, abrirNuevoTrabaja
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-3">
         <Card className="p-6 order-2">
           <Kicker>Por área</Kicker>
-          <h2 className="display mt-1 text-lg font-semibold">Prendas entregadas por área</h2>
+          <h2 className="display mt-1 text-lg font-semibold">Unidades entregadas por área</h2>
           <ul className="mt-4 space-y-4">
             {areas.map((a) => (
               <li key={a.area}>
@@ -129,11 +129,11 @@ export function Trabajadores({ todos, abrirTrabajador, editor, abrirNuevoTrabaja
             {visibles.length === 0 ? (
               <Vacio icono={<Users className="size-5" />} titulo="No hay trabajadores aquí" texto="Todavía no hay personal cargado." />
             ) : (
-              <Tabla etiqueta="Trabajadores y prendas recibidas" minAncho={560}>
+              <Tabla etiqueta="Trabajadores y unidades recibidas" minAncho={560}>
                 <thead className="border-b border-line-2">
                   <tr>
                     <th className={th} scope="col">Trabajador</th>
-                    <th className={th} scope="col">Prendas recibidas</th>
+                    <th className={th} scope="col">Unidades recibidas</th>
                     <th className={th} scope="col">Última entrega</th>
                     <th className={th} scope="col"><span className="sr-only">Detalle</span></th>
                   </tr>
@@ -151,7 +151,10 @@ export function Trabajadores({ todos, abrirTrabajador, editor, abrirNuevoTrabaja
                             {iniciales(t.trabajador)}
                           </span>
                           <div className="min-w-0">
-                            <p className="truncate text-[13.5px] font-semibold">{titulo(t.trabajador)}</p>
+                            {/* El clic sube a la fila; el botón permite abrirla con el teclado. */}
+                            <button type="button" className="block max-w-full truncate text-left text-[13.5px] font-semibold hover:underline">
+                              {titulo(t.trabajador)}
+                            </button>
                             <p className="text-[12px] text-muted">{titulo(t.area ?? "Sin área")}</p>
                           </div>
                         </div>

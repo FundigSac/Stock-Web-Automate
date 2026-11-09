@@ -1,7 +1,7 @@
 import { Minus, Plus } from "lucide-react";
 import { useMemo, useState } from "react";
-import { estadoDe, movimientosDe, type GrupoProducto } from "../lib/derive";
-import { entero, etiquetaTalla, fechaLarga, nombreProducto, nombreTalla, partirMovimiento, titulo } from "../lib/format";
+import { entregasDe, estadoDe, movimientosDe, type GrupoProducto } from "../lib/derive";
+import { entero, etiquetaTalla, fechaLarga, nombreProducto, nombreTallaEn, partirMovimiento, titulo } from "../lib/format";
 import type { Datos } from "../lib/types";
 import { cn } from "../lib/utils";
 import { MiniFoto, VisorFoto } from "./Evidencia";
@@ -83,7 +83,7 @@ export function VentanaProducto({
           <tbody>
             {tallas.map((t) => (
               <tr key={t.codigo} className="border-b border-line-2 last:border-0">
-                <td className={cn(td, "text-[13.5px] font-semibold")}>{nombreTalla(t.talla)}</td>
+                <td className={cn(td, "text-[13.5px] font-semibold")}>{nombreTallaEn(t.talla, tallas)}</td>
                 <td className={cn(td, "num hidden text-[12px] text-muted sm:table-cell")}>{t.codigo}</td>
                 <td className={cn(td, "num hidden text-right text-[13px] sm:table-cell")}>{entero(t.tenia_al_inicio)}</td>
                 <td className={cn(td, "num text-right text-[13px]")}>+{entero(t.entro)}</td>
@@ -143,13 +143,7 @@ export function VentanaTrabajador({
 }) {
   const [foto, setFoto] = useState<string | null>(null);
   const t = datos.trabajadores.find((x) => x.trabajador === nombre) ?? null;
-  const entregas = useMemo(
-    () =>
-      datos.salidas
-        .filter((s) => s.trabajador_cliente === nombre && !s.anulado)
-        .sort((a, b) => b.fecha.localeCompare(a.fecha) || b.id - a.id),
-    [datos.salidas, nombre],
-  );
+  const entregas = useMemo(() => entregasDe(datos.salidas, nombre), [datos.salidas, nombre]);
   if (!nombre || !t) return null;
 
   return (
@@ -159,7 +153,7 @@ export function VentanaTrabajador({
       titulo={titulo(t.trabajador)}
       subtitulo={
         <>
-          {titulo(t.area ?? "Sin área")} · <b className="num text-ink">{entero(t.prendas_recibidas)}</b> prendas recibidas · última entrega{" "}
+          {titulo(t.area ?? "Sin área")} · <b className="num text-ink">{entero(t.prendas_recibidas)}</b> unidades recibidas · última entrega{" "}
           {fechaLarga(t.ultima_entrega)}
         </>
       }

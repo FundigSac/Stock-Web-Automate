@@ -1,7 +1,8 @@
 import type { GrupoProducto } from "../lib/derive";
 import type { Datos, Estado, Movimiento } from "../lib/types";
+import type { Campo } from "../lib/useLiveData";
 
-export type Vista = "resumen" | "stock" | "movimientos" | "trabajadores";
+export type Vista = "resumen" | "stock" | "movimientos" | "trabajadores" | "respaldo";
 export type FiltroEstado = Estado | "todos";
 
 export type VistaProps = {
@@ -25,5 +26,8 @@ export type VistaProps = {
   abrirNuevoTrabajador: () => void;
   /** Abre el asistente, opcionalmente con una pregunta ya hecha ("pedidos pendientes"). */
   abrirAsistente: (pregunta?: string) => void;
+  abrirPedidos: () => void;
   pedidosPendientes: number;
+  /** Tablas que no alcanzaron a descargarse antes de perder la señal. */
+  faltanDatos: Campo[];
 };

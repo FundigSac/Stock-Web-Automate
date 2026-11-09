@@ -9,19 +9,32 @@
   --color-surface: #ffffff;
   --color-ink: #0e0f11;
   --color-ink-2: #1b1d21;
-  --color-muted: #6b7078;
-  --color-faint: #9aa0a8;
+  --color-muted: #5c6169;
+  --color-faint: #676d76;
   --color-line: #e2e4e8;
   --color-line-2: #eceef1;
   --color-red: #d7261e;
   --color-red-soft: #fdecea;
   --color-ok: #0f7b4e;
   --color-ok-soft: #e4f4ec;
-  --color-warn: #a86a08;
+  --color-warn: #8a5606;
   --color-warn-soft: #fbf0db;
 
   --shadow-card: 0 1px 0 rgb(14 15 17 / 0.03), 0 8px 24px -12px rgb(14 15 17 / 0.12);
   --shadow-pop: 0 24px 60px -20px rgb(14 15 17 / 0.35);
+}
+
+/* Todo el texto corrido va justificado. Va en la capa base para que text-left o text-center lo puedan cambiar. */
+@layer base {
+  p,
+  li {
+    text-align: justify;
+  }
+  /* En un bloque centrado se justifican las líneas completas y la última sigue al centro. */
+  .text-center p,
+  .text-center li {
+    text-align-last: center;
+  }
 }
 
 html,

@@ -1,3 +1,12 @@
+import { hoyLima } from "./tiempo";
+
+/** Para comparar textos sin importar mayúsculas ni tildes. */
+export const norm = (s: string | null | undefined) =>
+  (s ?? "")
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase();
+
 const MESES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
 
 /** "2026-10-29" -> "29 oct 2026" (sin pasar por Date, para evitar desfases de zona horaria). */
@@ -32,10 +41,21 @@ export function hace(iso: string | null | undefined, ahora: number): string {
   return `hace ${Math.round(h / 24)} d`;
 }
 
+/** "de hace 3 días": la antigüedad de una copia guardada, dicha en una frase. */
+export function edadCopia(guardadoEn: number | null, ahora: number): string | null {
+  if (guardadoEn === null) return null;
+  const minutos = Math.max(0, Math.round((ahora - guardadoEn) / 60_000));
+  if (minutos < 2) return "de hace un momento";
+  if (minutos < 60) return `de hace ${minutos} minutos`;
+  const horas = Math.round(minutos / 60);
+  if (horas < 24) return `de hace ${horas} ${horas === 1 ? "hora" : "horas"}`;
+  const dias = Math.round(horas / 24);
+  return `de hace ${dias} ${dias === 1 ? "día" : "días"}`;
+}
+
+/** Hoy en Lima, aunque el dispositivo esté en otra zona horaria. */
 export function hoyISO(): string {
-  const d = new Date();
-  const p = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+  return hoyLima();
 }
 
 /** Suma (o resta) dias a una fecha ISO. */
@@ -50,8 +70,8 @@ export function iniciales(nombre: string): string {
   return ((partes[0]?.[0] ?? "") + (partes[1]?.[0] ?? "")).toUpperCase();
 }
 
-const SIGLAS = new Set(["EPP", "RRHH", "S/F", "C/F", "M&L", "XL", "XXL", "XS"]);
-const MENORES = new Set(["y", "de", "del", "la", "el", "en", "para", "con", "sin"]);
+const SIGLAS = new Set(["EPP", "RRHH", "S/F", "C/F", "M&L", "XL", "XXL", "XS", "SAC"]);
+const MENORES = new Set(["y", "o", "de", "del", "la", "el", "en", "para", "con", "sin"]);
 const ACENTOS: Record<string, string> = {
   pantalon: "pantalón",
   mascara: "máscara",
@@ -81,6 +101,13 @@ export function nombreTalla(talla: string | null | undefined): string {
   if (!s || /^(s\/?\s?talla|sin talla)$/i.test(s)) return "Sin talla";
   if (/^[uú]nica$/i.test(s)) return "Única";
   return /^[A-Za-z0-9]{1,4}$/.test(s) ? s.toUpperCase() : titulo(s);
+}
+
+/** La talla dentro de su producto: si dos quedarían iguales ("C/F - 30" y "S/F - 30"), conserva la variante. */
+export function nombreTallaEn(talla: string | null | undefined, hermanas: { talla: string | null }[]): string {
+  const n = nombreTalla(talla);
+  const variante = (talla ?? "").trim().match(/^([CS]\/F)\b/i)?.[1];
+  return variante && hermanas.filter((h) => nombreTalla(h.talla) === n).length > 1 ? `${n} ${variante.toUpperCase()}` : n;
 }
 
 /** Frase para mostrar: "Talla 30", "Talla única", "Sin talla". */

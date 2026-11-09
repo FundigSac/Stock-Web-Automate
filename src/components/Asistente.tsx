@@ -1,16 +1,13 @@
-import { Bot, Camera, Loader2, Mic, Send, Undo2, X } from "lucide-react";
+import { Camera, Loader2, Mic, Send, Undo2, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import {
   buscarFlexible,
   buscarPersona,
-  coincide,
   entender,
-  entenderVarios,
   esSeguridad,
   nombresConocidos,
   vocabularioCatalogo,
   type Contexto,
-  norm,
   sugerirProductos,
   tiposDe,
   type Tipo,
@@ -18,9 +15,16 @@ import {
   type Genero,
   type Orden,
 } from "../lib/asistente";
-import { agruparProductos, estadoDe, movimientosDe, type GrupoProducto } from "../lib/derive";
-import { entero, etiquetaTalla, fechaCorta, hoyISO, nombreProducto, nombreTalla, partirMovimiento, titulo } from "../lib/format";
-import { comprimirFoto, subirFoto } from "../lib/foto";
+import { agruparProductos, estadoDe, momentoMovimiento, movimientosDe, type GrupoProducto } from "../lib/derive";
+import { entero, etiquetaTalla, fechaCorta, hoyISO, norm, nombreProducto, nombreTalla, partirMovimiento, titulo } from "../lib/format";
+import { avisoFechaFoto, comprimirFoto, detalleCaptura, origenReal, prepararFoto, type FotoCapturada, type OrigenFoto } from "../lib/foto";
+import type { ItemRespaldo } from "../lib/offline/almacen";
+import { registrarMovimiento } from "../lib/offline/cliente";
+import { fechaDelRegistro, isoLima } from "../lib/tiempo";
+import { mensajeServidor } from "../lib/errores";
+import { crearPedidoEnTandas, PedidoParcial } from "../lib/pedidos";
+import { nuevoUuid } from "../lib/uuid";
+import { MAX_UNIDADES } from "./SelectorProducto";
 import { esImagen, esPdf, MAX_TEXTO, textoDeArchivo } from "../lib/archivo";
 import { aBase64, consultarIA, type AccionIA, type AccionMov, type RespuestaIA, type TurnoIA } from "../lib/ia";
 import { supabase } from "../lib/supabase";
@@ -40,6 +44,8 @@ type Mensaje = {
 };
 
 type Modo = "entrada" | "salida" | "pedido";
+/** Lo que se confirma desde los botones del chat. Las salidas siempre vienen de la IA, con su trabajador. */
+type ModoDirecto = "entrada" | "pedido";
 type Persona = { nombre: string; genero: Genero | null; area: string | null };
 type Plan = { tipoOk?: boolean; modo: Modo; orden: Orden; empresas: string[]; genero: Genero | null; grupo: GrupoProducto | null; cantidad: number | null; codigos: string[] | null; todas: boolean };
 type Linea = { g: GrupoProducto; t: StockItem; n: number };
@@ -53,8 +59,14 @@ const EJEMPLOS = [
   "Pide 20 guantes de hilo",
   "Pedidos pendientes",
 ];
+const EJEMPLOS_SIN_IA = ["¿Qué está por agotarse?", "Pedidos pendientes", "Resumen"];
 
 let contador = 0;
+
+/** Una foto adjunta sin usar deja de valer después de este tiempo. */
+const FOTO_VIGENTE_MS = 10 * 60_000;
+const AVISO_GUARDADO = "📦 Quedó guardado en este dispositivo con su fecha y hora. Se subirá solo; puedes verlo en Respaldo.";
+const filasDe = (it: ItemRespaldo) => it.lineas.filter((l) => l.idServidor !== undefined).map((l) => ({ codigo: l.codigo, queda: l.queda ?? 0, id: l.idServidor as number }));
 
 /** Reconocimiento de voz del navegador (Chrome/Android): convierte lo que dices en texto. */
 type Reconocedor = {
@@ -85,6 +97,8 @@ export function AsistenteDialog({
   datos,
   minimo,
   autor,
+  setAutor,
+  pedirAutor,
   avisar,
   crearProducto,
   crearTrabajador,
@@ -96,12 +110,19 @@ export function AsistenteDialog({
   datos: Datos;
   minimo: number;
   autor: string;
+  setAutor: (v: string) => void;
+  /** Sin sesion iniciada, el chat tambien tiene que saber quien registra. */
+  pedirAutor: boolean;
   avisar: (texto: string, error?: boolean) => void;
   crearProducto: (inicial: { nombre?: string }) => void;
   crearTrabajador: (nombre: string) => void;
   iniciar: string | null;
   consumirIniciar: () => void;
 }) {
+  // Siempre el nombre vigente: una confirmación puede haberse armado antes de que la persona lo escribiera.
+  const autorRef = useRef(autor);
+  autorRef.current = autor;
+  const firma = () => autorRef.current.trim();
   const stock = datos.stock;
   const trabajadores = datos.trabajadores;
   const grupos = useMemo(() => agruparProductos(stock, minimo), [stock, minimo]);
@@ -116,19 +137,23 @@ export function AsistenteDialog({
   const [trabajando, setTrabajando] = useState(false);
   const [escuchando, setEscuchando] = useState(false);
   const espera = useRef<{ tipo: "numero" | "texto"; fn: (v: never) => void } | null>(null);
+  /** Qué hacer si la persona confirma escribiendo "sí" en vez de pulsar el botón. */
+  const confirmacion = useRef<(() => void) | null>(null);
   const fin = useRef<HTMLDivElement>(null);
   const camara = useRef<HTMLInputElement>(null);
   const galeria = useRef<HTMLInputElement>(null);
-  const alElegirFoto = useRef<((b: Blob) => void) | null>(null);
+  const alElegirFoto = useRef<((f: FotoCapturada) => void) | null>(null);
   /** Foto que ya mandaste por el chat (boton de la camara): se usa en la siguiente entrega o entrada. */
-  const fotoRef = useRef<Blob | null>(null);
+  const fotoRef = useRef<FotoCapturada | null>(null);
+  /** Cuándo se adjuntó: una foto olvidada en el chat no debe respaldar la entrega de otro día. */
+  const fotoElegidaEn = useRef(0);
   const [fotoVista, setFotoVista] = useState<string | null>(null);
   const voz = useRef<Reconocedor | null>(null);
   const textoVoz = useRef("");
   const procesarRef = useRef<(t: string, eco?: boolean) => void>(() => {});
   /** Conversacion con la IA (para que entienda "sí", "el de mujer", etc.) y el documento que se está leyendo. */
   const historialIA = useRef<TurnoIA[]>([]);
-  const docRef = useRef<{ blob: Blob | null; b64: string | null; media: string; texto: string | null } | null>(null);
+  const docRef = useRef<{ foto: FotoCapturada | null; b64: string | null; media: string; texto: string | null } | null>(null);
   const archivo = useRef<HTMLInputElement>(null);
   const modoDoc = useRef(false);
 
@@ -149,6 +174,7 @@ export function AsistenteDialog({
     texto: t,
     accion: () => {
       espera.current = null;
+      confirmacion.current = null;
       accion();
     },
   });
@@ -160,12 +186,45 @@ export function AsistenteDialog({
       return null;
     });
   };
-  const cancelado = () => {
-    cerrarOpciones();
+  const olvidarAdjuntos = () => {
     quitarFoto();
     docRef.current = null;
     modoDoc.current = false;
+  };
+  const cancelado = () => {
+    cerrarOpciones();
+    olvidarAdjuntos();
     bot("Listo, no toqué nada.");
+  };
+  const miniatura = (f: FotoCapturada | null) => (f ? URL.createObjectURL(f.blob) : undefined);
+  /** Sin sesión, nada se confirma hasta saber quién registra. Devuelve true si tuvo que preguntar. */
+  function faltaNombre(seguir: () => void): boolean {
+    if (!pedirAutor || firma().length >= 2) return false;
+    bot("Antes de seguir, dime tu nombre. Queda anotado en cada registro.");
+    espera.current = {
+      tipo: "texto",
+      fn: ((nombre: string) => {
+        autorRef.current = nombre.trim();
+        setAutor(nombre.trim());
+        seguir();
+      }) as (v: never) => void,
+    };
+    return true;
+  }
+
+  // Lo adjuntado no sobrevive al cierre del chat ni a un rato sin usarlo.
+  useEffect(() => {
+    if (abierto) return;
+    // También se apagan los botones: guardan la foto y no deben servir al volver a abrir.
+    cerrarOpciones();
+    espera.current = null;
+    confirmacion.current = null;
+    olvidarAdjuntos();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [abierto]);
+  const fotoVigente = (): FotoCapturada | null => {
+    if (fotoRef.current && Date.now() - fotoElegidaEn.current > FOTO_VIGENTE_MS) quitarFoto();
+    return fotoRef.current;
   };
 
   useEffect(() => {
@@ -199,9 +258,32 @@ export function AsistenteDialog({
   function procesar(entrada: string, eco = true) {
     const t = entrada.trim();
     if (!t) return;
+    const porConfirmar = confirmacion.current;
+    confirmacion.current = null;
+    if (porConfirmar && /^(s[ií]|dale|ok|confirmo|registra(lo)?|reg[ií]stralo)[.!]*$/i.test(t)) {
+      setTexto("");
+      cerrarOpciones();
+      porConfirmar();
+      return;
+    }
+    if (porConfirmar && /^(no|cancela|cancelar)[.!]*$/i.test(t)) {
+      setTexto("");
+      if (eco) yo(t);
+      cancelado();
+      return;
+    }
     cerrarOpciones();
     if (eco) yo(t);
     setTexto("");
+
+    // Dejó una confirmación sin responder y escribió otra cosa: lo adjunto era para aquello, no para lo que viene.
+    if (porConfirmar && (docRef.current || fotoRef.current)) {
+      olvidarAdjuntos();
+      bot("Dejé de lado lo que habías adjuntado. Si era para esto, vuelve a subirlo.");
+    }
+
+    // Sin sesión hay que saber quién registra antes de hacer cualquier cosa: queda anotado en cada movimiento.
+    if (!espera.current && faltaNombre(() => procesarRef.current(t, false))) return;
 
     const e = espera.current;
     if (e) {
@@ -211,8 +293,13 @@ export function AsistenteDialog({
         return;
       }
       if (e.tipo === "numero" && /^\d{1,6}$/.test(t.replace(/\s*(unidades|uds?)$/i, "").trim())) {
+        const n = Number.parseInt(t, 10);
+        if (n <= 0 || n > MAX_UNIDADES) {
+          bot(`La cantidad debe estar entre 1 y ${entero(MAX_UNIDADES)}. ¿Cuántas son?`);
+          return;
+        }
         espera.current = null;
-        (e.fn as (n: number) => void)(Number.parseInt(t, 10));
+        (e.fn as (n: number) => void)(n);
         return;
       }
       if (e.tipo === "texto") {
@@ -223,85 +310,35 @@ export function AsistenteDialog({
       espera.current = null;
     }
 
-    const ordenes = entenderVarios(t, contexto);
+    const orden = entender(t, contexto);
     // Lo simple (qué se agota, pedidos, resumen) se responde al instante; lo demás lo entiende la IA.
-    if (["bajo", "ver_pedidos", "resumen"].includes(ordenes[0].accion)) {
-      procesarLocal(t, ordenes);
+    if (["bajo", "ver_pedidos", "resumen"].includes(orden.accion)) {
+      docRef.current = null;
+      procesarLocal(orden);
       return;
     }
     void preguntarIA(t);
   }
 
-  /** Plan B sin IA: reglas del chat de siempre. */
-  function procesarLocal(t: string, ordenes: Orden[] = entenderVarios(t, contexto)) {
-    const o = ordenes[0];
+  /** Sin IA solo se responden consultas. Para registrar está el formulario, que no depende de ella. */
+  function procesarLocal(o: Orden) {
     switch (o.accion) {
-      case "agregar":
-        iniciarCola("entrada", ordenes, null);
-        break;
-      case "pedir":
-        if (o.palabras.length === 0 && o.cantidad === null && o.porTalla.length === 0) mostrarBajos(o, true);
-        else iniciarCola("pedido", ordenes, null);
-        break;
-      case "salida":
-        resolverPersona(o, (persona) => iniciarCola("salida", [o], persona));
-        break;
       case "bajo":
         mostrarBajos(o, false);
-        break;
-      case "consultar":
-        consultar(o);
         break;
       case "ver_pedidos":
         verPedidos();
         break;
-      case "recibir_pedido":
-        elegirPedido(o, "llegó", confirmarRecibir);
-        break;
-      case "cancelar_pedido":
-        elegirPedido(o, "cancelo", confirmarCancelarPedido);
-        break;
       case "resumen":
         resumen();
         break;
-      case "anular":
-        if (/\b(producto|productos|trabajador|trabajadora|persona|empleado)\b/i.test(norm(t))) {
-          bot("Los productos y los trabajadores no se borran desde aquí, para no perder su historial. Sí puedo anular un movimiento (una entrada o una salida) si te equivocaste.");
-        } else anularFlujo(o);
+      case "consultar":
+        consultar(o);
         break;
-      case "crear": {
-        const nombre = titulo(o.palabras.join(" "));
-        bot(nombre ? `Abro el formulario para crear «${nombre}». Ahí eliges la empresa y las tallas.` : "Abro el formulario para crear el producto.");
-        crearProducto({ nombre });
-        break;
-      }
-      case "crear_trabajador": {
-        const nombre = titulo(o.palabras.join(" "));
-        bot(nombre ? `Abro el formulario para agregar a ${nombre}. Ahí eliges el área y si es hombre o mujer.` : "Abro el formulario para agregar al trabajador.");
-        crearTrabajador(nombre);
-        break;
-      }
-      default: {
-        // Sin verbo claro pero con un producto ("polo manga larga fundigsac"): se pregunta que quiere hacer.
-        const hallado = o.palabras.length > 0 ? buscarFlexible(grupos, { palabras: o.palabras, empresas: o.empresas, genero: o.genero }) : null;
-        if (hallado && hallado.grupos.length > 0 && hallado.grupos.length <= 12) {
-          const g1 = hallado.grupos[0];
-          const nombreP = hallado.grupos.length === 1 ? `«${nombreProducto(g1.producto, g1.empresa)} · ${titulo(g1.empresa)}»` : `«${titulo(hallado.palabras.join(" "))}»`;
-          const conPalabras = (accion: Orden["accion"]): Orden => ({ ...o, accion, palabras: hallado.palabras });
-          bot(`Entendí que hablas de ${nombreP}. ¿Qué quieres hacer?`, {
-            opciones: [
-              op("Ver cuánto hay", eligio("Ver cuánto hay", () => consultar(conPalabras("consultar")))),
-              op("Agregar stock", eligio("Agregar stock", () => iniciarCola("entrada", [conPalabras("agregar")], null))),
-              op("Entregarlo a alguien", eligio("Entregarlo a alguien", () => resolverPersona(conPalabras("salida"), (persona) => iniciarCola("salida", [conPalabras("salida")], persona)))),
-              op("Hacer un pedido", eligio("Hacer un pedido", () => iniciarCola("pedido", [conPalabras("pedir")], null))),
-            ],
-          });
-          break;
-        }
-        bot("Puedo: agregar stock, registrar entregas con foto, hacer y recibir pedidos, decirte qué se agota o cuánto hay de algo, y anular un registro. Prueba así:", {
-          opciones: EJEMPLOS.map((x) => op(x, () => procesarRef.current(x))),
+      default:
+        bot("El asistente con IA no responde ahora. Para registrar usa el botón Registrar. Mientras tanto puedo decirte qué se agota, cuánto hay de algo y qué pedidos siguen pendientes.", {
+          opciones: EJEMPLOS_SIN_IA.map((x) => op(x, () => procesarRef.current(x))),
         });
-      }
     }
   }
   procesarRef.current = procesar;
@@ -379,32 +416,37 @@ export function AsistenteDialog({
   }
 
   // ---------------------------------------------------------------- foto
-  async function fotoElegida(archivo: File | undefined) {
+  async function fotoElegida(archivo: File | undefined, origen: OrigenFoto = "galeria", ahora = Date.now()) {
     if (!archivo) return;
     setTrabajando(true);
     try {
       if (modoDoc.current) {
         modoDoc.current = false;
-        const doc = await comprimirFoto(archivo, 1800);
+        const momento = await detalleCaptura(archivo, origen, ahora);
+        const { capturadoEn } = momento;
+        const real = origenReal(origen, momento);
+        const doc = await comprimirFoto(archivo, { ladoMax: 1800, ...momento, capturadoEn, origen: real });
         yo("📄 Documento enviado", URL.createObjectURL(doc));
-        docRef.current = { blob: doc, b64: await aBase64(doc), media: "image/jpeg", texto: null };
+        docRef.current = { foto: { id: nuevoUuid(), blob: doc, origen: real, ...momento }, b64: await aBase64(doc), media: "image/jpeg", texto: null };
         historialIA.current = [];
         await preguntarIA("");
         return;
       }
-      const blob = await comprimirFoto(archivo);
+      const lista = await prepararFoto(archivo, origen, ahora);
+      const blob = lista.blob;
       const url = URL.createObjectURL(blob);
       yo("📷 Foto enviada", url);
       const pedida = alElegirFoto.current;
       // Siempre queda guardada: si estaba esperando una foto la usa; si no, se usa en el siguiente pedido.
-      fotoRef.current = blob;
+      fotoRef.current = lista;
+      fotoElegidaEn.current = Date.now();
       setFotoVista((v) => {
         if (v) URL.revokeObjectURL(v);
         return URL.createObjectURL(blob);
       });
       if (pedida) {
         alElegirFoto.current = null;
-        pedida(blob);
+        pedida(lista);
       } else {
         bot("📎 Foto lista. Ahora dime qué entregas o qué llegó, por ejemplo «entregué 2 casco blanco a Diego», y la mando junto con el registro.");
       }
@@ -427,12 +469,12 @@ export function AsistenteDialog({
     try {
       if (esPdf(f)) {
         if (f.size > 5_000_000) throw new Error("El PDF pesa más de 5 MB. Sube uno más liviano o una foto.");
-        docRef.current = { blob: null, b64: await aBase64(f), media: "application/pdf", texto: null };
+        docRef.current = { foto: null, b64: await aBase64(f), media: "application/pdf", texto: null };
       } else {
         const texto = await textoDeArchivo(f);
         if (!texto.trim()) throw new Error("El archivo está vacío.");
         if (texto.length > MAX_TEXTO) bot("El archivo es muy grande: leo solo las primeras filas. Si falta algo, súbelo en partes.");
-        docRef.current = { blob: null, b64: null, media: "image/jpeg", texto: texto.slice(0, MAX_TEXTO) };
+        docRef.current = { foto: null, b64: null, media: "image/jpeg", texto: texto.slice(0, MAX_TEXTO) };
       }
       yo(`📎 ${f.name}`);
       historialIA.current = [];
@@ -445,81 +487,47 @@ export function AsistenteDialog({
     }
   }
 
-  /** Boton de la camara del chat: se puede mandar la foto antes de decir qué entregas. */
+  /** Boton de la camara del chat: un solo menú. La evidencia va con cámara o galería; una hoja o archivo, por el selector. */
   function adjuntarFoto() {
     cerrarOpciones();
     alElegirFoto.current = null;
-    bot("¿Qué foto mandas?", {
-      opciones: [op("📄 Documento con cambios (foto, PDF, Excel o Word)", () => origenFoto(true)), op("📷 Evidencia de una entrega", () => origenFoto(false)), op("Cancelar", cancelado)],
-    });
-  }
-  function origenFoto(documento: boolean) {
-    cerrarOpciones();
-    modoDoc.current = documento;
-    bot(documento ? "Si es una hoja, ponla de frente y con buena luz. ¿Cómo la subes?" : "¿Cómo quieres mandar la foto?", {
+    modoDoc.current = false;
+    bot("¿Qué mandas?", {
       opciones: [
-        op("📷 Tomar foto", () => camara.current?.click()),
-        op("🖼️ Elegir de galería", () => galeria.current?.click()),
-        ...(documento ? [op("📎 Archivo (PDF, Excel, Word)", () => archivo.current?.click())] : []),
+        op("📷 Tomar foto de la entrega", () => camara.current?.click()),
+        op("🖼️ Foto de la galería", () => galeria.current?.click()),
+        op("📄 Hoja, PDF, Excel o Word", () => archivo.current?.click()),
         op("Cancelar", cancelado),
       ],
     });
   }
 
-  function pedirFoto(t: string, alElegir: (b: Blob) => void) {
+  function pedirFoto(t: string, alElegir: (f: FotoCapturada) => void) {
     modoDoc.current = false;
     alElegirFoto.current = alElegir;
     bot(t, { opciones: [op("📷 Tomar foto", () => camara.current?.click()), op("🖼️ Elegir de galería", () => galeria.current?.click()), op("Cancelar", cancelado)] });
   }
 
   // ---------------------------------------------------------------- utilidades de conversacion
-  function pedirNumero(t: string, sugeridos: number[], fn: (n: number) => void) {
+  function pedirNumero(t: string, sugeridos: number[], fn: (n: number) => void, extra: Opcion[] = []) {
     espera.current = { tipo: "numero", fn };
     bot(t, {
-      opciones: sugeridos.map((n) =>
-        op(
-          String(n),
-          eligio(String(n), () => {
-            espera.current = null;
-            fn(n);
-          }),
+      opciones: [
+        ...sugeridos.map((n) =>
+          op(
+            String(n),
+            eligio(String(n), () => {
+              espera.current = null;
+              fn(n);
+            }),
+          ),
         ),
-      ),
+        ...extra,
+      ],
     });
   }
 
   const aPersona = (t: { trabajador: string; genero: Genero | null; area: string | null }): Persona => ({ nombre: t.trabajador, genero: t.genero ?? null, area: t.area });
-
-  /** "a Diego": busca a la persona en la lista de trabajadores. */
-  function resolverPersona(o: Orden, listo: (p: Persona) => void) {
-    const buscar = (palabras: string[]) => {
-      const c = buscarPersona(trabajadores, palabras);
-      if (c.length === 1) {
-        bot(`Entrega para ${titulo(c[0].trabajador)}${c[0].area ? ` · ${titulo(c[0].area)}` : ""}.`);
-        listo(aPersona(c[0]));
-      } else if (c.length > 1) {
-        bot("¿A cuál de ellos?", {
-          opciones: c.slice(0, 8).map((t) => op(`${titulo(t.trabajador)}${t.area ? ` · ${titulo(t.area)}` : ""}`, eligio(titulo(t.trabajador), () => listo(aPersona(t))))),
-        });
-      } else {
-        const nombre = titulo(palabras.join(" "));
-        bot(`No encuentro a «${nombre}» en la lista de trabajadores.`, {
-          opciones: [
-            op(`Registrar a «${nombre}» como cliente`, eligio("Como cliente", () => listo({ nombre: palabras.join(" ").toUpperCase(), genero: null, area: null }))),
-            op("Agregar trabajador nuevo", () => crearTrabajador(nombre)),
-          ],
-        });
-      }
-    };
-    if (o.persona.length > 0) buscar(o.persona);
-    else {
-      bot("¿A quién se lo entregas? Escribe su nombre.");
-      espera.current = {
-        tipo: "texto",
-        fn: (t: string) => buscar(norm(t).split(/\s+/).filter((w) => w.length >= 2 && !["a", "al", "para", "el", "la", "de"].includes(w))),
-      };
-    }
-  }
 
   // ---------------------------------------------------------------- elegir producto, talla y cantidad
   /** "42 uds (S 7, M 1, L 17)" o "sin stock" */
@@ -630,31 +638,18 @@ export function AsistenteDialog({
       if (!especificado && tipos.length > 0) {
         const base = titulo(flex.palabras.join(" "));
         const elegirTipo = (t: Tipo) => elegirGrupo({ ...p, tipoOk: true, orden: { ...p.orden, palabras: t.palabras } }, alElegir);
-        // Lo que hay en stock ahora de ese tipo, por empresa: "Fundigsac: 42 uds (S 7, M 1, L 17)"
-        const stockDe = (gs: GrupoProducto[]) => {
-          const tallas = new Map<string, number>();
-          for (const g of gs) for (const t of g.tallas) if (t.queda > 0) tallas.set(nombreTalla(t.talla), (tallas.get(nombreTalla(t.talla)) ?? 0) + t.queda);
-          const total = Array.from(tallas.values()).reduce((a, n) => a + n, 0);
-          return total > 0 ? `${total} uds (${Array.from(tallas, ([k, n]) => `${k} ${n}`).join(", ")})` : "sin stock";
-        };
-        const resumenTipo = (t: Tipo) => {
-          const porEmpresa = new Map<string, GrupoProducto[]>();
-          for (const g of t.grupos) porEmpresa.set(g.empresa, [...(porEmpresa.get(g.empresa) ?? []), g]);
-          return Array.from(porEmpresa, ([e, gs]) => `${titulo(e)}: ${stockDe(gs)}`).join(" · ");
-        };
-        const etiquetaTipo = (t: Tipo) => `${t.etiqueta} — ${resumenTipo(t)}`;
         const paraQuien = p.genero === "MUJER" ? " para mujer" : p.genero === "HOMBRE" ? " para hombre" : "";
         const otro = op("Otro tipo (no está en la lista)", eligio("Otro tipo", () => {
           bot(`Dime el tipo exacto (por ejemplo «${base.toLowerCase()} …») o créalo como producto nuevo:`, { opciones: [op(`Crear «${base}» como producto nuevo`, () => crearProducto({ nombre: base }))] });
           esperarProducto(p, alElegir);
         }));
         if (tipos.length === 1) {
-          bot(`Solo tengo este tipo de «${base}»${paraQuien}:\n${etiquetaTipo(tipos[0])}\n¿Es ese?`, {
+          bot(`Solo tengo este tipo de «${base}»${paraQuien}:\n${textoTipo(tipos[0])}\n¿Es ese?`, {
             opciones: [op(`Sí, ${tipos[0].etiqueta}`, eligio(tipos[0].etiqueta, () => elegirTipo(tipos[0]))), otro],
           });
         } else {
           bot(`¿Qué tipo de «${base}»${paraQuien}? Esto es lo que hay ahora en stock:`, {
-            opciones: [...tipos.slice(0, 12).map((t) => op(etiquetaTipo(t), eligio(t.etiqueta, () => elegirTipo(t)))), otro],
+            opciones: [...tipos.slice(0, 12).map((t) => op(textoTipo(t), eligio(t.etiqueta, () => elegirTipo(t)))), otro],
           });
         }
         esperarProducto(p, alElegir);
@@ -734,35 +729,6 @@ export function AsistenteDialog({
     listo(objetivo.map((t) => ({ g, t, n })));
   }
 
-  /** Uno o varios productos en una misma frase: se resuelven uno por uno y se confirman juntos. */
-  function iniciarCola(modo: Modo, ordenes: Orden[], persona: Persona | null) {
-    const planes: Plan[] = ordenes.map((o) => ({
-      modo,
-      orden: o,
-      empresas: o.empresas,
-      genero: o.genero ?? persona?.genero ?? null,
-      grupo: null,
-      cantidad: o.cantidad,
-      codigos: null,
-      todas: o.todas,
-    }));
-    if (planes.length > 1) bot(`Entendí ${planes.length} productos. Los voy resolviendo uno por uno.`);
-    const acum: Linea[] = [];
-    const siguiente = (i: number) => {
-      if (i >= planes.length) {
-        finalizar(modo, acum, persona);
-        return;
-      }
-      elegirGrupo(planes[i], (pl) =>
-        resolverLineas(pl, (ls) => {
-          acum.push(...ls);
-          siguiente(i + 1);
-        }),
-      );
-    };
-    siguiente(0);
-  }
-
   // ---------------------------------------------------------------- confirmar y guardar
   function resumenLineas(modo: Modo, ls: Linea[]) {
     const porProducto = new Map<string, Linea[]>();
@@ -780,37 +746,24 @@ export function AsistenteDialog({
       .join("\n");
   }
 
-  function finalizar(modo: Modo, ls: Linea[], persona: Persona | null) {
+  function finalizar(modo: ModoDirecto, ls: Linea[]) {
     if (ls.length === 0) return;
-    if (modo === "salida") {
-      if (fotoRef.current) confirmar(modo, ls, persona, fotoRef.current);
-      else pedirFoto("📷 Para registrar la entrega necesito la foto de evidencia. Tómala o súbela:", (b) => confirmar(modo, ls, persona, b));
-      return;
-    }
-    confirmar(modo, ls, persona, modo === "entrada" ? fotoRef.current : null);
+    confirmar(modo, ls, modo === "entrada" ? fotoVigente() : null);
   }
 
-  function confirmar(modo: Modo, ls: Linea[], persona: Persona | null, foto: Blob | null) {
+  function confirmar(modo: ModoDirecto, ls: Linea[], foto: FotoCapturada | null) {
+    if (faltaNombre(() => confirmar(modo, ls, foto))) return;
     cerrarOpciones();
     const unidades = ls.reduce((a, l) => a + l.n, 0);
     const u = `${entero(unidades)} ${unidades === 1 ? "unidad" : "unidades"}`;
-    const negativo = modo === "salida" && ls.some((l) => l.t.queda - l.n < 0);
-    const cabecera =
-      modo === "entrada"
-        ? `Voy a AGREGAR ${u} al stock:`
-        : modo === "salida"
-          ? `Voy a registrar una SALIDA de ${u} para ${titulo(persona?.nombre)}${persona?.area ? ` (${titulo(persona.area)})` : ""}:`
-          : `Voy a hacer un PEDIDO de ${u}:`;
-    const opciones: Opcion[] = [
-      op(modo === "entrada" ? "✅ Sí, agregar al stock" : modo === "salida" ? "✅ Sí, registrar la salida" : "✅ Sí, hacer el pedido", () => ejecutar(modo, ls, persona, foto)),
-    ];
-    if (modo === "entrada") opciones.push(op(foto ? "📷 Cambiar la foto" : "📷 Agregar con foto (opcional)", () => pedirFoto("📷 Sube la foto de lo que llegó:", (b) => confirmar(modo, ls, persona, b))));
-    if (modo === "salida") opciones.push(op("📷 Cambiar la foto", () => pedirFoto("📷 Sube la nueva foto:", (b) => confirmar(modo, ls, persona, b))));
+    const opciones: Opcion[] = [op(modo === "entrada" ? "✅ Sí, agregar al stock" : "✅ Sí, hacer el pedido", () => ejecutar(modo, ls, foto))];
+    confirmacion.current = () => void ejecutar(modo, ls, foto);
+    if (modo === "entrada") opciones.push(op(foto ? "📷 Cambiar la foto" : "📷 Agregar con foto (opcional)", () => pedirFoto("📷 Sube la foto de lo que llegó:", (b) => confirmar(modo, ls, b))));
     opciones.push(op("Cancelar", cancelado));
-    bot(`${cabecera}\n${resumenLineas(modo, ls)}${negativo ? "\n\n⚠️ Ojo: alguna talla quedará en negativo (sacas más de lo que hay)." : ""}${foto ? "\n📎 Con foto." : ""}\n\n¿Lo registro?`, { opciones });
+    bot(`${modo === "entrada" ? `Voy a AGREGAR ${u} al stock:` : `Voy a hacer un PEDIDO de ${u}:`}\n${resumenLineas(modo, ls)}${foto ? `\n📎 Con foto.${avisoFechaFoto(foto, Date.now())}` : ""}\n\nRegistrando como ${firma()}. ¿Lo registro?`, { opciones, imagen: miniatura(foto) });
   }
 
-  async function ejecutar(modo: Modo, ls: Linea[], persona: Persona | null, foto: Blob | null) {
+  async function ejecutar(modo: ModoDirecto, ls: Linea[], foto: FotoCapturada | null) {
     cerrarOpciones();
     espera.current = null;
     yo("Sí");
@@ -819,64 +772,75 @@ export function AsistenteDialog({
       const items = ls.map((l) => ({ codigo: l.t.codigo, cantidad: l.n }));
       const total = ls.reduce((a, l) => a + l.n, 0);
       if (modo === "pedido") {
-        // El servidor acepta hasta 40 lineas por pedido: los pedidos grandes se mandan por tandas.
-        const ids: number[] = [];
-        for (let i = 0; i < items.length; i += 40) {
-          const { data, error } = await supabase.rpc("crear_pedido", { p_quien: autor.trim(), p_items: items.slice(i, i + 40), p_nota: "Asistente" });
-          if (error) throw new Error(error.message);
-          ids.push(...(((data as { ids?: number[] } | null)?.ids ?? []) as number[]));
-        }
+        const ids = await crearPedidoEnTandas(firma(), items, "Asistente");
         bot(`Pedido registrado ✅ (${entero(total)} ${total === 1 ? "unidad" : "unidades"}, ${ids.length} ${ids.length === 1 ? "línea" : "líneas"}).\n${resumenLineas("pedido", ls)}\n\nCuando llegue, dime «llegó el pedido de …» y lo sumo al stock.`, {
           opciones: [op("Ver pedidos pendientes", eligio("Pedidos pendientes", verPedidos))],
         });
         avisar(`Pedido registrado (${entero(total)} unidades)`);
         return;
       }
-      let ruta: string | null = null;
-      if (foto) ruta = await subirFoto(foto, modo === "entrada" ? "entradas" : "salidas");
-      const { data, error } = await supabase.rpc("registrar_lote", {
-        p_quien: autor.trim(),
-        p_tipo: modo,
-        p_fecha: hoyISO(),
-        p_items: items,
-        p_trabajador: modo === "salida" ? persona?.nombre : null,
-        p_nota: "Asistente",
-        p_foto: ruta,
-      });
-      if (error) throw new Error(error.message && !/fetch|network/i.test(error.message) ? error.message : "Revisa tu conexión.");
-      const res = ((data as { items?: { codigo: string; queda: number; id: number }[] } | null)?.items ?? []) as { codigo: string; queda: number; id: number }[];
+      const it = await guardarMovimiento(modo, ls, null, foto);
+      if (it.estado !== "confirmado") {
+        bot(AVISO_GUARDADO);
+        avisar("Guardado en este dispositivo");
+        quitarFoto();
+        return;
+      }
+      const res = filasDe(it);
       const detalle = ls
         .map((l) => {
           const queda = res.find((i) => i.codigo === l.t.codigo)?.queda;
-          return `${nombreProducto(l.g.producto, l.g.empresa)} · ${etiquetaTalla(l.t.talla)}: ${modo === "entrada" ? "+" : "−"}${entero(l.n)}${queda !== undefined ? ` (ahora ${entero(queda)})` : ""}`;
+          return `${nombreProducto(l.g.producto, l.g.empresa)} · ${etiquetaTalla(l.t.talla)}: +${entero(l.n)}${queda !== undefined ? ` (ahora ${entero(queda)})` : ""}`;
         })
         .join("\n");
-      bot(
-        modo === "entrada"
-          ? `Listo ✅ Agregué ${entero(total)} ${total === 1 ? "unidad" : "unidades"} al stock${ruta ? " con su foto" : ""}.\n${detalle}`
-          : `Listo ✅ Salida registrada para ${titulo(persona?.nombre)} con su foto de evidencia.\n${detalle}`,
-        { hecho: { ids: res.map((i) => i.id), tipo: modo === "entrada" ? "entrada" : "salida", deshecho: false } },
-      );
-      avisar(modo === "entrada" ? `Stock agregado (+${entero(total)})` : `Salida registrada para ${titulo(persona?.nombre)}`);
+      bot(`Listo ✅ Agregué ${entero(total)} ${total === 1 ? "unidad" : "unidades"} al stock${foto ? " con su foto" : ""}.\n${detalle}`, { hecho: { ids: res.map((i) => i.id), tipo: "entrada", deshecho: false } });
+      avisar(`Stock agregado (+${entero(total)})`);
       quitarFoto();
     } catch (e) {
-      bot(`No pude guardarlo: ${e instanceof Error ? e.message : "error desconocido"}`);
+      console.error(e);
+      bot(modo === "pedido" && e instanceof Error ? e.message : "No pude guardarlo en este dispositivo. Inténtalo otra vez.");
     } finally {
       setTrabajando(false);
     }
   }
 
+  /** Todo movimiento del chat pasa por el respaldo, igual que los del formulario. */
+  function guardarMovimiento(modo: "entrada" | "salida", ls: Linea[], trabajador: string | null, foto: FotoCapturada | null): Promise<ItemRespaldo> {
+    const ahora = isoLima(Date.now());
+    return registrarMovimiento({
+      tipo: modo,
+      capturadoEn: foto?.capturadoEn ?? ahora,
+      guardadoEn: ahora,
+      // El movimiento es del día de la foto, aunque se guarde pasada la medianoche.
+      fecha: fechaDelRegistro({ capturadoEn: foto?.capturadoEn }),
+      quien: firma(),
+      trabajador,
+      area: null,
+      nota: "Asistente",
+      lineas: ls.map((l) => ({ codigo: l.t.codigo, cantidad: l.n, producto: l.t.producto, talla: nombreTalla(l.t.talla) })),
+      foto: foto ? { id: foto.id, blob: foto.blob, origen: foto.origen, origenHora: foto.origenHora, dudosa: foto.dudosa } : null,
+    });
+  }
+
   async function deshacer(m: Mensaje) {
     if (!m.hecho || m.hecho.deshecho) return;
+    if (m.hecho.ids.length === 0) {
+      bot("No tengo a qué movimiento volver. Anúlalo desde Movimientos.");
+      return;
+    }
     setTrabajando(true);
+    // Cada id que se anula sale de la lista: un reintento sigue por donde se quedó.
+    const faltan = [...m.hecho.ids];
     try {
-      for (const id of m.hecho.ids) {
-        const { error } = await supabase.rpc("anular_movimiento", { p_quien: autor.trim(), p_tipo: m.hecho.tipo, p_id: id, p_motivo: "Deshecho desde el asistente" });
-        if (error) throw new Error(error.message);
+      while (faltan.length > 0) {
+        const { error } = await supabase.rpc("anular_movimiento", { p_quien: firma(), p_tipo: m.hecho.tipo, p_id: faltan[0], p_motivo: "Deshecho desde el asistente" });
+        if (error) throw new Error(mensajeServidor(error, "No se pudo completar. Revisa tu conexión e inténtalo de nuevo."));
+        faltan.shift();
       }
-      setMensajes((ms) => ms.map((x) => (x.id === m.id ? { ...x, hecho: { ...x.hecho!, deshecho: true } } : x)));
+      setMensajes((ms) => ms.map((x) => (x.id === m.id ? { ...x, hecho: { ...x.hecho!, ids: [], deshecho: true } } : x)));
       bot("Deshecho. El stock volvió a como estaba.");
     } catch (e) {
+      setMensajes((ms) => ms.map((x) => (x.id === m.id ? { ...x, hecho: { ...x.hecho!, ids: faltan } } : x)));
       bot(`No pude deshacerlo: ${e instanceof Error ? e.message : "error"}`);
     } finally {
       setTrabajando(false);
@@ -931,7 +895,7 @@ export function AsistenteDialog({
   }
 
   const pedirDe = (items: Item[], etiqueta: string, sugeridos: number[]) =>
-    pedirNumero(`¿Cuántas unidades pido de cada talla (${etiqueta})?`, sugeridos, (n) => finalizar("pedido", lineasDe(items, n), null));
+    pedirNumero(`¿Cuántas unidades pido de cada talla (${etiqueta})?`, sugeridos, (n) => finalizar("pedido", lineasDe(items, n)));
 
   function mostrarBajos(o: Orden, desdePedir: boolean) {
     const f = (x: { g: GrupoProducto }) =>
@@ -986,7 +950,7 @@ export function AsistenteDialog({
       const total = g.tallas.reduce((a, t) => a + Math.max(0, t.queda), 0);
       const filas = g.tallas.map((t) => {
         const e = estadoDe(t.queda, minimo);
-        return `\u00A0\u00A0\u00A0\u00A0${etiquetaTalla(t.talla)}: ${entero(t.queda)}${e === "bajo" ? " ⚠️ por agotarse" : e === "sin" ? " · sin stock" : e === "revisar" ? " · revisar (negativo)" : ""}`;
+        return `\u00A0\u00A0\u00A0\u00A0${etiquetaTalla(t.talla)}: ${entero(t.queda)}${e === "bajo" ? " ⚠️ por agotarse" : e === "sin" ? " · sin stock" : e === "revisar" ? " · saldo negativo" : ""}`;
       });
       const pend = datos.pedidos.filter((x) => x.estado === "pendiente" && g.tallas.some((t) => t.codigo === x.codigo));
       bot(
@@ -996,9 +960,9 @@ export function AsistenteDialog({
     });
   }
 
-  function iniciarConGrupo(modo: Modo, g: GrupoProducto) {
+  function iniciarConGrupo(modo: ModoDirecto, g: GrupoProducto) {
     const o: Orden = { accion: modo === "pedido" ? "pedir" : "agregar", cantidad: null, porTalla: [], tallas: [], todas: false, ultimo: false, empresas: [], genero: null, incluirSin: false, persona: [], palabras: [] };
-    resolverLineas({ modo, orden: o, empresas: [], genero: null, grupo: g, cantidad: null, codigos: null, todas: false }, (ls) => finalizar(modo, ls, null));
+    resolverLineas({ modo, orden: o, empresas: [], genero: null, grupo: g, cantidad: null, codigos: null, todas: false }, (ls) => finalizar(modo, ls));
   }
 
   function resumen() {
@@ -1007,7 +971,7 @@ export function AsistenteDialog({
     const hoyMovs = recientes.filter((m) => m.fecha === hoy);
     const pend = datos.pedidos.filter((p) => p.estado === "pendiente");
     bot(
-      `📊 Resumen\n• ${entero(unidades)} unidades en ${entero(stock.length)} artículos\n• ${bajos.length} productos por agotarse\n• ${sinStock.length} productos con alguna talla sin stock\n• ${pend.length} pedidos pendientes\n• Hoy: ${hoyMovs.filter((m) => m.tipo === "entrada").length} entradas y ${hoyMovs.filter((m) => m.tipo === "salida").length} salidas`,
+      `📊 Resumen\n• ${entero(unidades)} unidades en ${entero(stock.length)} tallas\n• ${bajos.length} productos por agotarse\n• ${sinStock.length} productos con alguna talla sin stock\n• ${pend.length} pedidos pendientes\n• Hoy: ${hoyMovs.filter((m) => m.tipo === "entrada").length} entradas y ${hoyMovs.filter((m) => m.tipo === "salida").length} salidas`,
       { opciones: [op("¿Qué se agota?", eligio("¿Qué está por agotarse?", () => mostrarBajos(entender("por agotarse"), false)))] },
     );
   }
@@ -1027,6 +991,13 @@ export function AsistenteDialog({
     }
     return Array.from(m.values()).sort((a, b) => b.ids[0] - a.ids[0]);
   }, [datos.pedidos, empresaDe]);
+
+  /** Deja en el grupo solo las líneas indicadas: "llegó el M" no recibe también el L. */
+  const acotarPedido = (g: GrupoPedido, ids: number[]): GrupoPedido => {
+    const posiciones = g.ids.flatMap((id, i) => (ids.includes(id) ? [i] : []));
+    const lineas = posiciones.map((i) => g.lineas[i]);
+    return { ...g, ids: posiciones.map((i) => g.ids[i]), lineas, total: lineas.reduce((a, l) => a + l.cantidad, 0) };
+  };
 
   const descPedido = (g: GrupoPedido) => `${g.nombre} · ${titulo(g.empresa)} (${g.lineas.map((l) => `${l.talla} ×${l.cantidad}`).join(", ")})`;
 
@@ -1050,41 +1021,52 @@ export function AsistenteDialog({
     );
   }
 
-  function elegirPedido(o: Orden, accion: string, siguiente: (g: GrupoPedido) => void) {
-    if (gruposPedido.length === 0) {
-      bot("No hay pedidos pendientes.");
+  /** Pregunta talla por talla cuánto llegó. Lo que no llegó sigue pendiente. */
+  function pedirCantidades(g: GrupoPedido, i = 0, llegaron: { id: number; cantidad: number }[] = []) {
+    if (i >= g.ids.length) {
+      if (llegaron.length === 0) {
+        bot("No sumé nada: el pedido sigue pendiente.");
+        return;
+      }
+      const parcial = acotarPedido(g, llegaron.map((l) => l.id));
+      void hacerRecibir(parcial, parcial.ids.map((id) => llegaron.find((l) => l.id === id)!.cantidad));
       return;
     }
-    const c =
-      o.palabras.length === 0 && o.empresas.length === 0
-        ? gruposPedido
-        : gruposPedido.filter((g) => {
-            if (o.empresas.length && !o.empresas.includes(g.empresa)) return false;
-            const hay = norm(`${g.nombre} ${g.lineas.map((l) => l.talla).join(" ")}`);
-            return o.palabras.every((w) => coincide(hay, w));
-          });
-    if (c.length === 0) bot(`No encontré pedidos pendientes de «${titulo(o.palabras.join(" "))}».`, { opciones: [op("Ver pedidos pendientes", eligio("Pedidos pendientes", verPedidos))] });
-    else if (c.length === 1 || o.ultimo) siguiente(c[0]);
-    else bot(`Encontré ${c.length} pedidos. ¿Cuál ${accion}?`, { opciones: c.slice(0, 6).map((g) => op(descPedido(g), eligio(g.nombre, () => siguiente(g)))) });
+    const l = g.lineas[i];
+    pedirNumero(
+      `${etiquetaTalla(l.talla)}: ¿cuántas llegaron? Pediste ${entero(l.cantidad)}.`,
+      [l.cantidad],
+      (n) => pedirCantidades(g, i + 1, [...llegaron, { id: g.ids[i], cantidad: n }]),
+      [op("No llegó", eligio("No llegó", () => pedirCantidades(g, i + 1, llegaron)))],
+    );
   }
 
-  function confirmarRecibir(g: GrupoPedido) {
+  function confirmarRecibir(g: GrupoPedido, cantidad: number | null = null) {
+    if (faltaNombre(() => confirmarRecibir(g, cantidad))) return;
     cerrarOpciones();
-    const opciones: Opcion[] = [op("✅ Sí, llegó completo", () => hacerRecibir(g, null))];
-    if (g.ids.length === 1) opciones.push(op("Llegó otra cantidad", eligio("Llegó otra cantidad", () => pedirNumero("¿Cuántas unidades llegaron?", [g.total], (n) => hacerRecibir(g, n)))));
-    opciones.push(op("No", cancelado));
-    bot(`Pedido: ${descPedido(g)}\n¿Llegó completo? Lo sumo al stock como entrada.`, { opciones });
+    const otra = op("Llegó otra cantidad", eligio("Llegó otra cantidad", () => pedirCantidades(g)));
+    if (cantidad !== null && g.ids.length > 1) {
+      pedirCantidades(g);
+      return;
+    }
+    if (cantidad !== null) {
+      confirmacion.current = () => void hacerRecibir(g, [cantidad]);
+      bot(`Pedido: ${descPedido(g)}\nLlegaron ${entero(cantidad)} de ${entero(g.total)}. ¿Lo sumo al stock?`, { opciones: [op("✅ Sí, sumar", () => hacerRecibir(g, [cantidad])), otra, op("No", cancelado)] });
+      return;
+    }
+    confirmacion.current = () => void hacerRecibir(g, null);
+    bot(`Pedido: ${descPedido(g)}\n¿Llegó completo? Lo sumo al stock como entrada.`, { opciones: [op("✅ Sí, llegó completo", () => hacerRecibir(g, null)), otra, op("No", cancelado)] });
   }
 
-  async function hacerRecibir(g: GrupoPedido, cantidad: number | null) {
+  async function hacerRecibir(g: GrupoPedido, cantidades: number[] | null) {
     cerrarOpciones();
     yo("Sí, llegó");
     setTrabajando(true);
     try {
       const lineas: string[] = [];
-      for (const id of g.ids) {
-        const { data, error } = await supabase.rpc("recibir_pedido", { p_quien: autor.trim(), p_id: id, p_cantidad: cantidad });
-        if (error) throw new Error(error.message);
+      for (const [i, id] of g.ids.entries()) {
+        const { data, error } = await supabase.rpc("recibir_pedido", { p_quien: firma(), p_id: id, p_cantidad: cantidades?.[i] ?? null });
+        if (error) throw new Error(mensajeServidor(error, "No se pudo completar. Revisa tu conexión e inténtalo de nuevo."));
         const d = data as { queda: number; cantidad: number } | null;
         lineas.push(`+${entero(d?.cantidad ?? 0)} (ahora ${entero(d?.queda ?? 0)})`);
       }
@@ -1098,7 +1080,9 @@ export function AsistenteDialog({
   }
 
   function confirmarCancelarPedido(g: GrupoPedido) {
+    if (faltaNombre(() => confirmarCancelarPedido(g))) return;
     cerrarOpciones();
+    confirmacion.current = () => void hacerCancelar(g);
     bot(`Voy a cancelar el pedido: ${descPedido(g)}. No se suma nada al stock. ¿Confirmas?`, { opciones: [op("Sí, cancelar el pedido", () => hacerCancelar(g)), op("No", cancelado)] });
   }
 
@@ -1108,8 +1092,8 @@ export function AsistenteDialog({
     setTrabajando(true);
     try {
       for (const id of g.ids) {
-        const { error } = await supabase.rpc("cancelar_pedido", { p_quien: autor.trim(), p_id: id });
-        if (error) throw new Error(error.message);
+        const { error } = await supabase.rpc("cancelar_pedido", { p_quien: firma(), p_id: id });
+        if (error) throw new Error(mensajeServidor(error, "No se pudo completar. Revisa tu conexión e inténtalo de nuevo."));
       }
       bot(`Pedido cancelado ✅ ${g.nombre} · ${titulo(g.empresa)}.`);
       avisar("Pedido cancelado");
@@ -1123,40 +1107,17 @@ export function AsistenteDialog({
   // ---------------------------------------------------------------- anular un movimiento
   function describir(m: Movimiento) {
     const p = partirMovimiento(m.producto);
-    const hora = new Date(m.creado).toLocaleTimeString("es-PE", { hour: "2-digit", minute: "2-digit" });
-    return `${m.tipo === "entrada" ? "Entrada" : "Salida"} de ${entero(m.cantidad)} · ${nombreProducto(p.nombre, empresaDe.get(m.codigo))} · ${etiquetaTalla(p.talla)} · ${fechaCorta(m.fecha)} ${hora}${m.persona && m.tipo === "salida" ? ` · a ${titulo(m.persona)}` : ""}${m.registradoPor ? ` · por ${titulo(m.registradoPor)}` : ""}`;
-  }
-
-  function anularFlujo(o: Orden) {
-    if (recientes.length === 0) {
-      bot("Todavía no hay movimientos para anular.");
-      return;
-    }
-    if (o.palabras.length === 0 && !o.ultimo) {
-      bot("¿Qué quieres anular? Dime el producto («anula la entrada de polo manga larga») o elige:", { opciones: [op("El último movimiento", () => confirmarAnular(recientes[0]))] });
-      return;
-    }
-    const coinciden = recientes.filter((m) => {
-      const p = partirMovimiento(m.producto);
-      const hay = norm(`${nombreProducto(p.nombre, empresaDe.get(m.codigo))} ${p.talla} ${empresaDe.get(m.codigo) ?? ""} ${m.persona ?? ""} ${m.tipo}`);
-      return o.palabras.every((w) => coincide(hay, w));
-    });
-    if (coinciden.length === 0) {
-      bot(`No encontré movimientos de «${titulo(o.palabras.join(" "))}».`);
-      return;
-    }
-    if (o.ultimo || coinciden.length === 1) {
-      confirmarAnular(coinciden[0]);
-      return;
-    }
-    bot(`Encontré ${coinciden.length} movimientos. ¿Cuál anulo? (los más recientes primero)`, {
-      opciones: coinciden.slice(0, 6).map((m) => op(describir(m), eligio(describir(m), () => confirmarAnular(m)))),
-    });
+    return `${m.tipo === "entrada" ? "Entrada" : "Salida"} de ${entero(m.cantidad)} · ${nombreProducto(p.nombre, empresaDe.get(m.codigo))} · ${etiquetaTalla(p.talla)} · ${momentoMovimiento(m)}${m.persona && m.tipo === "salida" ? ` · a ${titulo(m.persona)}` : ""}${m.registradoPor ? ` · por ${titulo(m.registradoPor)}` : ""}`;
   }
 
   function confirmarAnular(m: Movimiento) {
+    if (faltaNombre(() => confirmarAnular(m))) return;
     cerrarOpciones();
-    bot(`Voy a anular:\n${describir(m)}\n\n${m.tipo === "entrada" ? "El stock bajará" : "El stock subirá"} ${entero(m.cantidad)}. No se borra: queda en el historial como anulado. ¿Confirmas?`, {
+    const saldo = m.tipo === "entrada" ? stock.find((s) => s.codigo === m.codigo)?.queda : undefined;
+    const quedaria = saldo !== undefined ? saldo - m.cantidad : null;
+    const avisos = [quedaria !== null && quedaria < 0 ? `⚠️ El saldo de esta talla quedará en ${entero(quedaria)}.` : "", m.etiqueta ? "⚠️ Es una mitad de un cambio de prenda: la otra mitad no se anula sola." : ""].filter(Boolean).join("\n");
+    confirmacion.current = () => void hacerAnular(m);
+    bot(`Voy a anular:\n${describir(m)}\n\n${m.tipo === "entrada" ? "El stock bajará" : "El stock subirá"} ${entero(m.cantidad)}. No se borra: queda en el historial como anulado.${avisos ? `\n${avisos}` : ""}\n¿Confirmas?`, {
       opciones: [op("Sí, anular", () => hacerAnular(m)), op("No, dejarlo", cancelado)],
     });
   }
@@ -1166,8 +1127,8 @@ export function AsistenteDialog({
     yo("Sí, anular");
     setTrabajando(true);
     try {
-      const { error } = await supabase.rpc("anular_movimiento", { p_quien: autor.trim(), p_tipo: m.tipo, p_id: m.id, p_motivo: "Anulado desde el asistente" });
-      if (error) throw new Error(error.message && !/fetch|network/i.test(error.message) ? error.message : "Revisa tu conexión.");
+      const { error } = await supabase.rpc("anular_movimiento", { p_quien: firma(), p_tipo: m.tipo, p_id: m.id, p_motivo: "Anulado desde el asistente" });
+      if (error) throw new Error(mensajeServidor(error, "No se pudo completar. Revisa tu conexión e inténtalo de nuevo."));
       bot(`Anulado ✅ ${describir(m)}`);
       avisar("Movimiento anulado");
     } catch (e) {
@@ -1198,7 +1159,7 @@ export function AsistenteDialog({
       setTrabajando(false);
       if (docRef.current) {
         bot("No pude leer el documento con la IA ahora. Revisa tu conexión e inténtalo otra vez.", { opciones: [op("Reintentar", () => void preguntarIA(t)), op("Cancelar", cancelado)] });
-      } else procesarLocal(t);
+      } else procesarLocal(entender(t, contexto));
       return;
     }
     setTrabajando(false);
@@ -1210,6 +1171,9 @@ export function AsistenteDialog({
     recordar("asistente", [r.mensaje, q?.pregunta, q && q.opciones.length > 0 ? `Opciones: ${q.opciones.join(" | ")}` : ""].filter(Boolean).join("\n"));
     const msg = r.mensaje.trim();
     if (msg) bot(msg);
+    if (r.faltan && (r.faltan.acciones > 0 || r.faltan.items > 0 || r.faltan.truncado)) {
+      bot(`⚠️ Faltan filas: ${r.faltan.truncado ? "el documento era muy largo y la lectura se cortó. " : ""}${r.faltan.acciones + r.faltan.items > 0 ? `Quedaron fuera ${r.faltan.acciones + r.faltan.items}. ` : ""}Pásalo por partes para registrar el resto.`);
+    }
     if (q) {
       // Mientras falte un dato no se registra nada: solo se muestran listas.
       for (const a of r.acciones) if (a.tipo === "ver") verIA(a.ver);
@@ -1217,6 +1181,7 @@ export function AsistenteDialog({
       return;
     }
     if (r.acciones.length === 0) {
+      docRef.current = null;
       if (!msg) bot("No te entendí bien. ¿Me lo dices de otra forma?");
       return;
     }
@@ -1239,8 +1204,10 @@ export function AsistenteDialog({
       else if (a.tipo === "ver") verIA(a.ver);
       else if (a.tipo === "recibir_pedido" || a.tipo === "cancelar_pedido") {
         const recibir = a.tipo === "recibir_pedido";
-        const siguiente = recibir ? confirmarRecibir : confirmarCancelarPedido;
-        const gs = gruposPedido.filter((g) => g.ids.some((id) => a.pedido_ids.includes(id)));
+        const n = a.cantidad_recibida;
+        const cantidad = recibir && n !== undefined && Number.isInteger(n) && n > 0 && n <= MAX_UNIDADES ? n : null;
+        const siguiente = (g: GrupoPedido) => (recibir ? confirmarRecibir(g, cantidad) : confirmarCancelarPedido(g));
+        const gs = gruposPedido.filter((g) => g.ids.some((id) => a.pedido_ids.includes(id))).map((g) => acotarPedido(g, a.pedido_ids));
         if (gs.length === 0) bot("No encontré ese pedido pendiente.");
         else if (gs.length === 1) siguiente(gs[0]);
         else bot(`Encontré ${gs.length} pedidos. ¿Cuál ${recibir ? "llegó" : "cancelo"}?`, { opciones: gs.slice(0, 8).map((g) => op(descPedido(g), eligio(g.nombre, () => siguiente(g)))) });
@@ -1259,6 +1226,7 @@ export function AsistenteDialog({
       }
     }
     if (movs.length > 0) armarLote(movs);
+    else docRef.current = null;
   }
 
   /** Convierte lo que dijo la IA en movimientos reales (con las reglas de género) y pide UNA confirmación. */
@@ -1275,7 +1243,16 @@ export function AsistenteDialog({
         const exacto = trabajadores.find((t) => norm(t.trabajador) === norm(nombre));
         const parecidos = exacto ? [exacto] : buscarPersona(trabajadores, palabras);
         if (parecidos.length === 1) persona = aPersona(parecidos[0]);
-        else {
+        else if (parecidos.length > 1) {
+          // Dos Diegos: se pregunta cuál. Al elegir, se vuelve a armar todo con el nombre completo.
+          bot(`Hay ${parecidos.length} personas que coinciden con «${nombre}». ¿A cuál?`, {
+            opciones: [
+              ...parecidos.slice(0, 8).map((t) => op(titulo(t.trabajador), eligio(titulo(t.trabajador), () => armarLote(acs.map((x) => (x === a ? { ...x, trabajador: t.trabajador } : x)))))),
+              op("Cancelar", cancelado),
+            ],
+          });
+          return;
+        } else {
           persona = { nombre: nombre.toUpperCase(), genero: null, area: null };
           cliente = true;
         }
@@ -1301,10 +1278,11 @@ export function AsistenteDialog({
     }
     if (omitidas.length > 0) bot(`⚠️ No incluí esto porque es ropa del otro género:\n${omitidas.join("\n")}`);
     if (pasos.length === 0) {
+      docRef.current = null;
       bot("No pude armar ningún movimiento con eso. Dímelo con producto, talla y cantidad.");
       return;
     }
-    const foto = docRef.current?.blob ?? fotoRef.current;
+    const foto = docRef.current?.foto ?? fotoVigente();
     if (pasos.some((p) => p.modo === "salida") && !foto) pedirFoto("📷 Para registrar las entregas necesito la foto de evidencia. Tómala o súbela:", (b) => confirmarLote(pasos, b));
     else confirmarLote(pasos, foto);
   }
@@ -1320,7 +1298,8 @@ export function AsistenteDialog({
     return `${cab}\n${resumenLineas(p.modo, p.ls)}`;
   }
 
-  function confirmarLote(pasos: Paso[], foto: Blob | null) {
+  function confirmarLote(pasos: Paso[], foto: FotoCapturada | null) {
+    if (faltaNombre(() => confirmarLote(pasos, foto))) return;
     cerrarOpciones();
     const queda = new Map<string, number>();
     let negativo = false;
@@ -1335,21 +1314,23 @@ export function AsistenteDialog({
     const n = pasos.length;
     const hayFoto = pasos.some((p) => p.modo !== "pedido");
     const opciones: Opcion[] = [op(n === 1 ? "✅ Sí, registrar" : `✅ Sí, registrar los ${n} movimientos`, () => void ejecutarLote(pasos, foto))];
-    if (foto && hayFoto && !docRef.current?.blob) opciones.push(op("📷 Cambiar la foto", () => pedirFoto("📷 Sube la nueva foto:", (b) => confirmarLote(pasos, b))));
+    confirmacion.current = () => void ejecutarLote(pasos, foto);
+    // La IA recibe esto en el siguiente turno: si le dicen "son 3", sabe de qué hablaban.
+    recordar("asistente", `Propuse esto y espero confirmación:\n${pasos.map(textoPaso).join("\n")}`);
+    if (foto && hayFoto && !docRef.current?.foto) opciones.push(op("📷 Cambiar la foto", () => pedirFoto("📷 Sube la nueva foto:", (b) => confirmarLote(pasos, b))));
     opciones.push(op("Cancelar", cancelado));
     bot(
-      `Esto entendí${docRef.current ? " del documento" : ""}:\n\n${pasos.map(textoPaso).join("\n\n")}${negativo ? "\n\n⚠️ Ojo: alguna talla quedará en negativo." : ""}${foto && hayFoto ? "\n\n📎 Con foto." : ""}\n\n¿Lo registro? Cada movimiento se guarda por separado.`,
-      { opciones },
+      `Esto entendí${docRef.current ? " del documento" : ""}:\n\n${pasos.map(textoPaso).join("\n\n")}${negativo ? "\n\n⚠️ Ojo: alguna talla quedará en negativo." : ""}${foto && hayFoto ? `\n\n📎 Con foto.${avisoFechaFoto(foto, Date.now())}` : ""}\n\nRegistrando como ${firma()}. ¿Lo registro? Cada movimiento se guarda por separado.`,
+      { opciones, imagen: hayFoto ? miniatura(foto) : undefined },
     );
   }
 
   /** Guarda cada movimiento por separado: si uno falla, los demás igual se registran. */
-  async function ejecutarLote(pasos: Paso[], foto: Blob | null) {
+  async function ejecutarLote(pasos: Paso[], foto: FotoCapturada | null) {
     cerrarOpciones();
     espera.current = null;
     yo("Sí, registrar");
     setTrabajando(true);
-    const rutas: Partial<Record<"entradas" | "salidas", string>> = {};
     const fallos: string[] = [];
     const hecho: Record<Modo, { ids: number[]; lineas: string[]; unidades: number }> = {
       entrada: { ids: [], lineas: [], unidades: 0 },
@@ -1357,6 +1338,7 @@ export function AsistenteDialog({
       pedido: { ids: [], lineas: [], unidades: 0 },
     };
     let ok = 0;
+    let enRespaldo = 0;
     try {
       for (const p of pasos) {
         const quien = p.modo === "salida" ? ` a ${titulo(p.persona?.nombre)}` : "";
@@ -1364,25 +1346,15 @@ export function AsistenteDialog({
           const items = p.ls.map((l) => ({ codigo: l.t.codigo, cantidad: l.n }));
           let res: { codigo: string; queda: number; id: number }[] = [];
           if (p.modo === "pedido") {
-            for (let i = 0; i < items.length; i += 40) {
-              const { error } = await supabase.rpc("crear_pedido", { p_quien: autor.trim(), p_items: items.slice(i, i + 40), p_nota: "Asistente" });
-              if (error) throw new Error(error.message);
-            }
+            await crearPedidoEnTandas(firma(), items, "Asistente");
           } else {
-            const carpeta = p.modo === "entrada" ? "entradas" : "salidas";
-            if (foto && !rutas[carpeta]) rutas[carpeta] = await subirFoto(foto, carpeta);
-            const { data, error } = await supabase.rpc("registrar_lote", {
-              p_quien: autor.trim(),
-              p_tipo: p.modo,
-              p_fecha: hoyISO(),
-              p_items: items,
-              p_trabajador: p.modo === "salida" ? p.persona?.nombre : null,
-              p_nota: "Asistente",
-              p_foto: rutas[carpeta] ?? null,
-            });
-            if (error) throw new Error(error.message && !/fetch|network/i.test(error.message) ? error.message : "Revisa tu conexión.");
-            res = ((data as { items?: { codigo: string; queda: number; id: number }[] } | null)?.items ?? []) as { codigo: string; queda: number; id: number }[];
-            hecho[p.modo].ids.push(...res.map((i) => i.id));
+            const it = await guardarMovimiento(p.modo, p.ls, p.modo === "salida" ? (p.persona?.nombre ?? null) : null, foto);
+            if (it.estado === "confirmado") {
+              res = filasDe(it);
+              hecho[p.modo].ids.push(...res.map((i) => i.id));
+            } else {
+              enRespaldo++;
+            }
           }
           for (const l of p.ls) {
             const queda = res.find((i) => i.codigo === l.t.codigo)?.queda;
@@ -1391,7 +1363,8 @@ export function AsistenteDialog({
           }
           ok++;
         } catch (e) {
-          fallos.push(`• ${p.modo === "entrada" ? "Entrada" : p.modo === "salida" ? "Salida" : "Pedido"}${quien} (${p.ls.map((l) => `${nombreProducto(l.g.producto, l.g.empresa)} ${etiquetaTalla(l.t.talla)}`).join(", ")}): ${e instanceof Error ? e.message : "error"}`);
+          console.error(e);
+          fallos.push(`• ${p.modo === "entrada" ? "Entrada" : p.modo === "salida" ? "Salida" : "Pedido"}${quien} (${p.ls.map((l) => `${nombreProducto(l.g.producto, l.g.empresa)} ${etiquetaTalla(l.t.talla)}`).join(", ")})${e instanceof PedidoParcial ? `. ${e.message}` : ""}`);
         }
       }
     } finally {
@@ -1401,6 +1374,7 @@ export function AsistenteDialog({
     if (hecho.entrada.lineas.length > 0) bot(`Listo ✅ Agregué ${u(hecho.entrada.unidades)} al stock.\n${hecho.entrada.lineas.join("\n")}`, { hecho: { ids: hecho.entrada.ids, tipo: "entrada", deshecho: false } });
     if (hecho.salida.lineas.length > 0) bot(`Listo ✅ Registré ${u(hecho.salida.unidades)} de salida, con la foto de evidencia.\n${hecho.salida.lineas.join("\n")}`, { hecho: { ids: hecho.salida.ids, tipo: "salida", deshecho: false } });
     if (hecho.pedido.lineas.length > 0) bot(`Pedido registrado ✅ (${u(hecho.pedido.unidades)}).\n${hecho.pedido.lineas.join("\n")}`);
+    if (enRespaldo > 0) bot(AVISO_GUARDADO);
     if (fallos.length > 0) bot(`⚠️ No pude guardar ${fallos.length} ${fallos.length === 1 ? "movimiento" : "movimientos"}:\n${fallos.join("\n")}`);
     if (ok > 0) avisar(ok === 1 ? "Movimiento registrado" : `${ok} movimientos registrados`);
     recordar("asistente", fallos.length === 0 ? "Todo quedó registrado." : `Se registraron ${ok} de ${pasos.length}; hubo ${fallos.length} errores.`);
@@ -1474,7 +1448,7 @@ export function AsistenteDialog({
         className="sr-only"
         tabIndex={-1}
         onChange={(e) => {
-          fotoElegida(e.target.files?.[0]);
+          void fotoElegida(e.target.files?.[0], "camara", Date.now());
           e.target.value = "";
         }}
       />
@@ -1485,7 +1459,7 @@ export function AsistenteDialog({
         className="sr-only"
         tabIndex={-1}
         onChange={(e) => {
-          fotoElegida(e.target.files?.[0]);
+          void fotoElegida(e.target.files?.[0], "galeria", Date.now());
           e.target.value = "";
         }}
       />
@@ -1546,16 +1520,3 @@ export function AsistenteDialog({
   );
 }
 
-/** Boton flotante que abre el asistente. */
-export function BotonAsistente({ onClick }: { onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-label="Abrir el asistente de stock"
-      className="no-print fixed bottom-[10.25rem] right-4 z-40 grid size-14 place-items-center rounded-full border border-line bg-surface text-ink shadow-pop transition active:scale-95 sm:bottom-24 lg:bottom-8 lg:right-8"
-    >
-      <Bot className="size-6" />
-    </button>
-  );
-}

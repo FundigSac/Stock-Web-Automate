@@ -1,14 +1,19 @@
 import { Loader2, Minus, Plus, X } from "lucide-react";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { mensajeServidor as mensaje } from "../lib/errores";
 import { entero, nombreProducto, titulo } from "../lib/format";
+import { useEnLinea } from "../lib/offline/conexion";
 import { supabase } from "../lib/supabase";
 import type { StockItem, Trabajador } from "../lib/types";
 import { cn } from "../lib/utils";
 import { CampoAutor, estiloCampo, etiquetaCampo } from "./CampoAutor";
+import { CANTIDAD_INUSUAL, limpiarCantidad } from "./SelectorProducto";
 import { Boton, Chip, Ventana } from "./ui";
 
-const mensaje = (e: { message?: string }, otro: string) =>
-  e.message && !/fetch|network/i.test(e.message) ? e.message : otro;
+/** Crear productos y trabajadores lo hace el servidor (él asigna los códigos), así que sin señal no se puede. */
+function AvisoConexion({ que }: { que: string }) {
+  return <p className="rounded-xl bg-warn-soft px-3.5 py-2.5 text-[13px] font-medium text-warn">{que} necesita conexión. Mientras tanto puedes registrar entradas y salidas de lo que ya existe.</p>;
+}
 
 const GRUPOS_TALLA: { texto: string; tallas: string[] }[] = [
   { texto: "Ropa", tallas: ["S", "M", "L", "XL", "XXL"] },
@@ -48,9 +53,11 @@ export function NuevoProductoDialog({
   const [genero, setGenero] = useState("");
   const [tallas, setTallas] = useState<string[]>([]);
   const [cants, setCants] = useState<Record<string, string>>({});
+  const [inusualVisto, setInusualVisto] = useState(false);
   const [propia, setPropia] = useState("");
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const enLinea = useEnLinea();
 
   useEffect(() => {
     if (!abierto) return;
@@ -73,6 +80,7 @@ export function NuevoProductoDialog({
   );
   const cantidades = tallas.map((t) => Math.max(0, Number.parseInt(cants[t] ?? "0", 10) || 0));
   const unidades = cantidades.reduce((a, b) => a + b, 0);
+  const hayInusual = cantidades.some((c) => c >= CANTIDAD_INUSUAL);
   const valido = emp.length >= 2 && nom.length >= 3 && tallas.length > 0 && (!pedirAutor || autor.trim().length >= 2);
 
   const alternar = (t: string) => setTallas((a) => (a.includes(t) ? a.filter((x) => x !== t) : [...a, t]));
@@ -82,11 +90,18 @@ export function NuevoProductoDialog({
     setTallas((a) => (a.includes(t) ? a : [...a, t]));
     setPropia("");
   }
-  const ponerCant = (t: string, v: string) => setCants((c) => ({ ...c, [t]: v.replace(/[^\d]/g, "").slice(0, 6) }));
+  const ponerCant = (t: string, v: string) => {
+    setInusualVisto(false);
+    setCants((c) => ({ ...c, [t]: limpiarCantidad(v) }));
+  };
 
   async function crear(ev: FormEvent) {
     ev.preventDefault();
     if (!valido) return;
+    if (hayInusual && !inusualVisto) {
+      setInusualVisto(true);
+      return;
+    }
     setEnviando(true);
     setError(null);
     const { error: e } = await supabase.rpc("crear_producto", {
@@ -115,12 +130,13 @@ export function NuevoProductoDialog({
       subtitulo="Créalo una vez y ya queda disponible para registrar."
       pie={
         <div className="space-y-2">
+          {!enLinea && <AvisoConexion que="Crear un producto" />}
           {error && (
             <p role="alert" className="rounded-xl bg-red-soft px-3.5 py-2.5 text-[13px] font-medium text-red">
               {error}
             </p>
           )}
-          <Boton type="submit" form="producto-form" variante="ink" className="h-12 w-full" disabled={!valido || enviando}>
+          <Boton type="submit" form="producto-form" variante="ink" className="h-12 w-full" disabled={!enLinea || !valido || enviando}>
             {enviando && <Loader2 className="size-4 animate-spin" />} Crear producto
           </Boton>
         </div>
@@ -301,6 +317,11 @@ export function NuevoProductoDialog({
             )}
           </p>
         )}
+        {hayInusual && inusualVisto && (
+          <p role="alert" className="rounded-xl bg-warn-soft px-3.5 py-3 text-justify text-[13px] font-medium text-warn">
+            Hay una talla con {entero(CANTIDAD_INUSUAL)} unidades o más. Revisa el número y, si está bien, pulsa Crear producto otra vez.
+          </p>
+        )}
 
       </form>
     </Ventana>
@@ -334,6 +355,7 @@ export function NuevoTrabajadorDialog({
   const [otra, setOtra] = useState(false);
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const enLinea = useEnLinea();
 
   useEffect(() => {
     if (!abierto) return;
@@ -383,12 +405,13 @@ export function NuevoTrabajadorDialog({
       subtitulo="Aparecerá en la lista al registrar una salida."
       pie={
         <div className="space-y-2">
+          {!enLinea && <AvisoConexion que="Agregar un trabajador" />}
           {error && (
             <p role="alert" className="rounded-xl bg-red-soft px-3.5 py-2.5 text-[13px] font-medium text-red">
               {error}
             </p>
           )}
-          <Boton type="submit" form="trabajador-form" variante="ink" className="h-12 w-full" disabled={!valido || enviando}>
+          <Boton type="submit" form="trabajador-form" variante="ink" className="h-12 w-full" disabled={!enLinea || !valido || enviando}>
             {enviando && <Loader2 className="size-4 animate-spin" />} Agregar trabajador
           </Boton>
         </div>

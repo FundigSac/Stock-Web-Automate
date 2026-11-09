@@ -3,12 +3,41 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 const MODELO = "claude-haiku-5-5";
-const CORS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
+// ORIGENES_PERMITIDOS: dominios separados por comas. Sin definir, solo el dominio de producción.
+const PERMITIDOS = (Deno.env.get("ORIGENES_PERMITIDOS") ?? "https://fundigsac-stock-dashboard.vercel.app").split(",").map((o) => o.trim()).filter(Boolean);
+const corsDe = (req: Request) => {
+  const origen = req.headers.get("origin") ?? "";
+  return {
+    "Access-Control-Allow-Origin": PERMITIDOS.length === 0 ? "*" : PERMITIDOS.includes(origen) ? origen : PERMITIDOS[0],
+    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    Vary: "Origin",
+  };
 };
-const json = (o: unknown, status = 200) => new Response(JSON.stringify(o), { status, headers: { ...CORS, "Content-Type": "application/json" } });
+
+// Límite por persona o IP. Vive en memoria de cada instancia, así que es aproximado; el tope diario global sí es exacto.
+const POR_MINUTO = 20;
+const llamadas = new Map<string, number[]>();
+function excedeLimite(quien: string, ahora: number): boolean {
+  const recientes = (llamadas.get(quien) ?? []).filter((t) => ahora - t < 60_000);
+  if (recientes.length >= POR_MINUTO) return true;
+  recientes.push(ahora);
+  llamadas.set(quien, recientes);
+  if (llamadas.size > 2000) llamadas.clear();
+  return false;
+}
+
+const LOTE = 1000;
+async function traerTodo<T>(consulta: (desde: number, hasta: number) => PromiseLike<{ data: unknown; error: unknown }>): Promise<T[]> {
+  const filas: T[] = [];
+  for (let desde = 0; ; desde += LOTE) {
+    const { data, error } = await consulta(desde, desde + LOTE - 1);
+    if (error) throw error;
+    const pagina = (data ?? []) as T[];
+    filas.push(...pagina);
+    if (pagina.length < LOTE) return filas;
+  }
+}
 
 const HERRAMIENTA = {
   name: "responder",
@@ -87,12 +116,27 @@ REGLAS IMPORTANTES:
 13. Cuando devuelvas acciones de entrada/salida/pedido, NO las repitas en "mensaje" (la app ya muestra el resumen). Usa "mensaje" solo para avisar de lo que dejaste fuera o no se pudo leer (fila, motivo); si no hay nada que avisar, escribe solo "Revisa y confirma.".`;
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
+  const CORS = corsDe(req);
+  const json = (o: unknown, status = 200) => new Response(JSON.stringify(o), { status, headers: { ...CORS, "Content-Type": "application/json" } });
+  try {
+    return await atender(req, json);
+  } catch (e) {
+    console.error("asistente", e);
+    return json({ error: "El asistente no está disponible ahora. Inténtalo en un momento." }, 503);
+  }
+});
+
+async function atender(req: Request, json: (o: unknown, status?: number) => Response): Promise<Response> {
+  if (req.method === "OPTIONS") return json("ok");
   if (req.method !== "POST") return json({ error: "Método no permitido" }, 405);
+  const origen = req.headers.get("origin") ?? "";
+  if (PERMITIDOS.length > 0 && origen && !PERMITIDOS.includes(origen)) return json({ error: "Origen no permitido." }, 403);
 
   let body: Record<string, unknown>;
   try {
-    body = await req.json();
+    const crudo: unknown = await req.json();
+    if (!crudo || typeof crudo !== "object" || Array.isArray(crudo)) return json({ error: "Mensaje no válido" }, 400);
+    body = crudo as Record<string, unknown>;
   } catch {
     return json({ error: "Mensaje no válido" }, 400);
   }
@@ -100,20 +144,32 @@ Deno.serve(async (req) => {
   const imagen = typeof body.imagen === "string" && body.imagen.length > 0 ? body.imagen : null;
   const tipoImg = body.media_type === "image/png" ? "image/png" : body.media_type === "application/pdf" ? "application/pdf" : "image/jpeg";
   const docTexto = typeof body.documento === "string" ? body.documento.slice(0, 60_000).trim() : "";
-  const historial = Array.isArray(body.historial) ? (body.historial as { rol?: string; texto?: string }[]).slice(-8) : [];
+  const historial = Array.isArray(body.historial) ? (body.historial as ({ rol?: string; texto?: string } | null)[]).filter((h): h is { rol?: string; texto?: string } => !!h && typeof h === "object").slice(-8) : [];
   if (!texto && !imagen && !docTexto) return json({ error: "Escribe algo o manda una foto." }, 400);
   if (imagen && imagen.length > 7_000_000) return json({ error: "El archivo pesa demasiado." }, 413);
 
   const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 
-  // Limites para que nadie gaste la cuenta de IA
-  const hace1m = new Date(Date.now() - 60_000).toISOString();
+  // Quién llama: con registro abierto puede cualquiera, como en la app; si no, solo una cuenta editora.
+  const portador = (req.headers.get("authorization") ?? "").replace(/^bearer\s+/i, "");
+  const { data: usuarioRes } = portador ? await admin.auth.getUser(portador) : { data: { user: null } };
+  const usuario = usuarioRes?.user ?? null;
+  const { data: reglas, error: errReglas } = await admin.from("ajustes").select("registro_abierto").eq("id", 1).maybeSingle();
+  if (errReglas) throw errReglas;
+  if (!reglas?.registro_abierto) {
+    if (!usuario) return json({ error: "Entra con tu cuenta para usar el asistente." }, 401);
+    const comoUsuario = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!, { global: { headers: { Authorization: `Bearer ${portador}` } } });
+    const { data: editor, error: errEditor } = await comoUsuario.rpc("is_editor");
+    if (errEditor) throw errEditor;
+    if (editor !== true) return json({ error: "Esta cuenta no tiene permiso para usar el asistente." }, 403);
+  }
+
+  // Limites para que nadie gaste la cuenta de IA. Si no se pueden comprobar, no se sigue.
+  const ip = (req.headers.get("x-forwarded-for") ?? "").split(",")[0].trim() || "desconocido";
+  if (excedeLimite(usuario?.id ?? `ip:${ip}`, Date.now())) return json({ error: "Demasiadas consultas seguidas. Espera un momento." }, 429);
   const hace24h = new Date(Date.now() - 86_400_000).toISOString();
-  const [{ count: porMin }, { count: porDia }] = await Promise.all([
-    admin.from("ia_uso").select("id", { count: "exact", head: true }).gte("created_at", hace1m),
-    admin.from("ia_uso").select("id", { count: "exact", head: true }).gte("created_at", hace24h),
-  ]);
-  if ((porMin ?? 0) >= 30) return json({ error: "Demasiadas consultas seguidas. Espera un momento." }, 429);
+  const { count: porDia, error: errLimite } = await admin.from("ia_uso").select("id", { count: "exact", head: true }).gte("created_at", hace24h);
+  if (errLimite) throw errLimite;
   if ((porDia ?? 0) >= 1500) return json({ error: "Se alcanzó el límite diario del asistente." }, 429);
   await admin.from("ia_uso").insert({ con_imagen: Boolean(imagen) });
 
@@ -121,36 +177,54 @@ Deno.serve(async (req) => {
   if (!clave) return json({ error: "El asistente no tiene la clave de IA configurada." }, 500);
 
   // Contexto real del negocio, leido aqui (el navegador no puede alterarlo)
-  const [stock, personal, pedidos, entradas, salidas, ajustes] = await Promise.all([
-    admin.from("stock_items").select("codigo,empresa,producto,talla,genero,queda").order("empresa").order("producto").limit(1000),
-    admin.from("trabajadores").select("trabajador,area,genero").order("trabajador").limit(200),
+  type FilaCatalogo = { codigo: string; empresa: string; producto: string; talla: string | null; genero: string | null; queda: number };
+  type FilaPersona = { trabajador: string; area: string | null; genero: string | null };
+  // capturado_en no existe hasta aplicar la migración de registro sin conexión: mientras tanto se lee sin esa columna.
+  const leerMovimientos = async (tabla: "entradas" | "salidas", columnas: string) => {
+    const pedir = (extra: string, ordenar: boolean) => {
+      let q = admin.from(tabla).select(`${columnas}${extra}`).eq("anulado", false).order("fecha", { ascending: false });
+      if (ordenar) q = q.order("capturado_en", { ascending: false, nullsFirst: false });
+      // Las filas sin capturado_en van al final de su día: la ventana es amplia para que el orden real se decida abajo, en JS.
+      return q.order("id", { ascending: false }).limit(200);
+    };
+    const r = await pedir(",capturado_en", true);
+    return r.error?.code === "42703" ? await pedir("", false) : r;
+  };
+  const [catalogo, listaPersonal, pedidos, entradas, salidas, ajustes] = await Promise.all([
+    traerTodo<FilaCatalogo>((d, h) => admin.from("stock_items").select("codigo,empresa,producto,talla,genero,queda").order("empresa").order("producto").order("codigo").range(d, h)),
+    traerTodo<FilaPersona>((d, h) => admin.from("trabajadores").select("trabajador,area,genero").order("trabajador").range(d, h)),
     admin.from("pedidos").select("id,codigo,producto,cantidad,fecha,creado_por").eq("estado", "pendiente").order("id", { ascending: false }).limit(60),
-    admin.from("entradas").select("id,fecha,codigo,producto,cantidad,creado_por,created_at").eq("anulado", false).order("id", { ascending: false }).limit(12),
-    admin.from("salidas").select("id,fecha,codigo,producto,cantidad,trabajador_cliente,creado_por,created_at").eq("anulado", false).order("id", { ascending: false }).limit(12),
+    leerMovimientos("entradas", "id,fecha,codigo,producto,cantidad,creado_por,created_at"),
+    leerMovimientos("salidas", "id,fecha,codigo,producto,cantidad,trabajador_cliente,creado_por,created_at"),
     admin.from("ajustes").select("stock_minimo,ia_reglas").eq("id", 1).maybeSingle(),
   ]);
-  const catalogo = (stock.data ?? []) as { codigo: string; empresa: string; producto: string; talla: string | null; genero: string | null; queda: number }[];
+  if (pedidos.error || entradas.error || salidas.error || ajustes.error) throw pedidos.error ?? entradas.error ?? salidas.error ?? ajustes.error;
   const codigos = new Set(catalogo.map((c) => c.codigo));
   const pedidosPend = (pedidos.data ?? []) as { id: number }[];
   const idsPedidos = new Set(pedidosPend.map((p) => p.id));
+  type FilaMov = { id: number; fecha: string; created_at: string; capturado_en?: string | null };
+  // Lo que importa es cuándo pasó: un lote que sube tarde no es lo más reciente.
+  const momento = (m: FilaMov) => Date.parse(m.capturado_en ?? m.created_at);
   const movs = [
-    ...((entradas.data ?? []) as { id: number; created_at: string }[]).map((m) => ({ ...m, tipo: "entrada" })),
-    ...((salidas.data ?? []) as { id: number; created_at: string }[]).map((m) => ({ ...m, tipo: "salida" })),
-  ].sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 15);
+    ...((entradas.data ?? []) as unknown as FilaMov[]).map((m) => ({ ...m, tipo: "entrada" })),
+    ...((salidas.data ?? []) as unknown as FilaMov[]).map((m) => ({ ...m, tipo: "salida" })),
+  ].sort((a, b) => b.fecha.localeCompare(a.fecha) || momento(b) - momento(a)).slice(0, 15);
+  const horaDe = (m: FilaMov) => new Date(momento(m)).toLocaleTimeString("es-PE", { timeZone: "America/Lima", hour: "2-digit", minute: "2-digit", hour12: false });
   const clavesMov = new Set(movs.map((m) => `${m.tipo}:${m.id}`));
 
   const hoy = new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" });
-  const contexto = `\n\nCATÁLOGO (codigo|empresa|producto|talla|genero|stock actual):\n${catalogo
-    .map((c) => `${c.codigo}|${c.empresa}|${c.producto}|${c.talla ?? "-"}|${c.genero ?? "-"}|${c.queda}`)
-    .join("\n")}\n\nTRABAJADORES (nombre|area|genero):\n${((personal.data ?? []) as { trabajador: string; area: string | null; genero: string | null }[])
+  // Lo que casi no cambia va en el bloque cacheado; el stock cambia con cada movimiento y va aparte.
+  const contexto = `\n\nCATÁLOGO (codigo|empresa|producto|talla|genero):\n${catalogo
+    .map((c) => `${c.codigo}|${c.empresa}|${c.producto}|${c.talla ?? "-"}|${c.genero ?? "-"}`)
+    .join("\n")}\n\nTRABAJADORES (nombre|area|genero):\n${listaPersonal
     .map((t) => `${t.trabajador}|${t.area ?? "-"}|${t.genero ?? "sin dato"}`)
     .join("\n")}`;
-  const contextoVariable = `\n\nHOY: ${hoy}. STOCK MÍNIMO (por agotarse): ${ajustes.data?.stock_minimo ?? 2} unidades o menos.\n\nPEDIDOS PENDIENTES (id|codigo|producto|cantidad|fecha):\n${((pedidos.data ?? []) as { id: number; codigo: string; producto: string; cantidad: number; fecha: string }[])
+  const contextoVariable = `\n\nHOY: ${hoy}.\n\nSTOCK ACTUAL (codigo|stock actual):\n${catalogo.map((c) => `${c.codigo}|${c.queda}`).join("\n")}\n\n STOCK MÍNIMO (por agotarse): ${ajustes.data?.stock_minimo ?? 2} unidades o menos.\n\nPEDIDOS PENDIENTES (id|codigo|producto|cantidad|fecha):\n${((pedidos.data ?? []) as { id: number; codigo: string; producto: string; cantidad: number; fecha: string }[])
     .map((p) => `${p.id}|${p.codigo}|${p.producto}|${p.cantidad}|${p.fecha}`)
-    .join("\n") || "(ninguno)"}\n\nÚLTIMOS MOVIMIENTOS, del más reciente al más antiguo (tipo|id|codigo|producto|cantidad|trabajador|registró):\n${movs
+    .join("\n") || "(ninguno)"}\n\nÚLTIMOS MOVIMIENTOS, del más reciente al más antiguo (tipo|id|fecha|hora|codigo|producto|cantidad|trabajador|registró):\n${movs
     .map((m) => {
-      const x = m as unknown as { tipo: string; id: number; codigo: string; producto: string; cantidad: number; trabajador_cliente?: string; creado_por?: string };
-      return `${x.tipo}|${x.id}|${x.codigo}|${x.producto}|${x.cantidad}|${x.trabajador_cliente ?? "-"}|${x.creado_por ?? "-"}`;
+      const x = m as unknown as { tipo: string; id: number; fecha: string; codigo: string; producto: string; cantidad: number; trabajador_cliente?: string; creado_por?: string };
+      return `${x.tipo}|${x.id}|${x.fecha}|${horaDe(m)}|${x.codigo}|${x.producto}|${x.cantidad}|${x.trabajador_cliente ?? "-"}|${x.creado_por ?? "-"}`;
     })
     .join("\n") || "(ninguno)"}`;
 
@@ -183,6 +257,8 @@ Deno.serve(async (req) => {
     resp = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: { "x-api-key": String(clave), "anthropic-version": "2023-06-01", "content-type": "application/json" },
+      // Si quien preguntó ya se fue, no se sigue pagando la respuesta.
+      signal: req.signal,
       body: JSON.stringify({
         model: MODELO,
         max_tokens: 8000,
@@ -200,9 +276,8 @@ Deno.serve(async (req) => {
     return json({ error: "No pude conectar con la IA." }, 502);
   }
   if (!resp.ok) {
-    const detalle = (await resp.text()).slice(0, 400);
-    console.error("anthropic", resp.status, detalle);
-    return json({ error: `La IA respondió con error (${resp.status}).`, detalle }, 502);
+    console.error("anthropic", resp.status, (await resp.text()).slice(0, 400));
+    return json({ error: "La IA no pudo responder ahora. Inténtalo en un momento." }, 502);
   }
   const data = await resp.json();
   const uso = (data.content ?? []).find((b: { type: string }) => b.type === "tool_use") as { input?: Record<string, unknown> } | undefined;
@@ -212,18 +287,23 @@ Deno.serve(async (req) => {
   // Se validan los datos que devolvio la IA: solo codigos, pedidos y movimientos que existen
   type Accion = Record<string, unknown>;
   const acciones: Accion[] = [];
-  for (const a of ((salida.acciones as Accion[]) ?? []).slice(0, 80)) {
+  const propuestas = (Array.isArray(salida.acciones) ? salida.acciones : []).filter((a): a is Accion => !!a && typeof a === "object") as Accion[];
+  const faltan = { acciones: Math.max(0, propuestas.length - 80), items: 0, truncado: data.stop_reason === "max_tokens" };
+  for (const a of propuestas.slice(0, 80)) {
     const tipo = String(a.tipo ?? "");
     if (["entrada", "salida", "pedido"].includes(tipo)) {
-      const items = ((a.items as { codigo?: string; cantidad?: number }[]) ?? [])
-        .filter((i) => i && codigos.has(String(i.codigo)) && Number.isInteger(i.cantidad) && (i.cantidad as number) > 0 && (i.cantidad as number) <= 100000)
-        .slice(0, 40)
-        .map((i) => ({ codigo: String(i.codigo), cantidad: i.cantidad as number }));
+      const crudos = (Array.isArray(a.items) ? a.items : []) as { codigo?: string; cantidad?: number }[];
+      const validos = crudos.filter((i) => i && codigos.has(String(i.codigo)) && Number.isInteger(i.cantidad) && (i.cantidad as number) > 0 && (i.cantidad as number) <= 100000);
+      const items = validos.slice(0, 40).map((i) => ({ codigo: String(i.codigo), cantidad: i.cantidad as number }));
+      faltan.items += crudos.length - items.length;
       if (items.length === 0) continue;
-      if (tipo === "salida" && !String(a.trabajador ?? "").trim()) continue;
+      if (tipo === "salida" && !String(a.trabajador ?? "").trim()) {
+        faltan.items += items.length;
+        continue;
+      }
       acciones.push({ tipo, trabajador: a.trabajador ? String(a.trabajador).slice(0, 80) : undefined, items });
     } else if (tipo === "recibir_pedido" || tipo === "cancelar_pedido") {
-      const ids = ((a.pedido_ids as number[]) ?? []).filter((i) => idsPedidos.has(i)).slice(0, 40);
+      const ids = (Array.isArray(a.pedido_ids) ? (a.pedido_ids as number[]) : []).filter((i) => idsPedidos.has(i)).slice(0, 40);
       if (ids.length === 0) continue;
       acciones.push({ tipo, pedido_ids: ids, cantidad_recibida: Number.isInteger(a.cantidad_recibida) ? a.cantidad_recibida : undefined });
     } else if (tipo === "anular_movimiento") {
@@ -239,6 +319,7 @@ Deno.serve(async (req) => {
   return json({
     mensaje: String(salida.mensaje ?? "").slice(0, 1500),
     acciones,
-    aclarar: aclarar?.pregunta ? { pregunta: String(aclarar.pregunta).slice(0, 300), opciones: (aclarar.opciones ?? []).map((o) => String(o).slice(0, 90)).slice(0, 8) } : undefined,
+    aclarar: aclarar?.pregunta ? { pregunta: String(aclarar.pregunta).slice(0, 300), opciones: (Array.isArray(aclarar.opciones) ? aclarar.opciones : []).map((o) => String(o).slice(0, 90)).slice(0, 8) } : undefined,
+    faltan,
   });
-});
+}

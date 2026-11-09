@@ -1,7 +1,7 @@
 import { Minus, Plus, Search, Undo2, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { GrupoProducto } from "../lib/derive";
-import { entero, etiquetaTalla, nombreProducto, titulo } from "../lib/format";
+import { entero, etiquetaTalla, norm, nombreProducto, nombreTallaEn, titulo } from "../lib/format";
 import type { StockItem } from "../lib/types";
 import { cn } from "../lib/utils";
 import { estiloCampo, etiquetaCampo } from "./CampoAutor";
@@ -10,6 +10,17 @@ import { Chip } from "./ui";
 /** Producto elegido y las unidades puestas en cada talla (por codigo). */
 export type Sel = { clave: string | null; cants: Record<string, string> };
 export const SEL_VACIA: Sel = { clave: null, cants: {} };
+
+/** El mismo tope que aplica el servidor por línea. */
+export const MAX_UNIDADES = 100_000;
+/** Desde esta cantidad por talla se pide una confirmación: suele ser un número mal escrito. */
+export const CANTIDAD_INUSUAL = 1000;
+
+/** Deja solo dígitos y no permite pasar del tope. */
+export function limpiarCantidad(v: string): string {
+  const d = v.replace(/\D/g, "").slice(0, 6);
+  return d === "" ? "" : String(Math.min(MAX_UNIDADES, Number(d)));
+}
 
 export type Linea = { t: StockItem; n: number; quedaria: number };
 
@@ -21,12 +32,6 @@ export function lineasDe(grupos: GrupoProducto[], sel: Sel, suma: boolean): Line
     .filter((l) => l.n > 0)
     .map((l) => ({ ...l, quedaria: l.t.queda + (suma ? l.n : -l.n) }));
 }
-
-export const norm = (s: string | null | undefined) =>
-  (s ?? "")
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .toLowerCase();
 
 export function SelectorProducto({
   titulo: encabezado,
@@ -70,7 +75,7 @@ export function SelectorProducto({
   }, [q, grupos, empresaF, filtraGenero, genero]);
 
   const grupo = grupos.find((g) => g.clave === valor.clave) ?? null;
-  const poner = (codigo: string, v: string) => onChange({ ...valor, cants: { ...valor.cants, [codigo]: v.replace(/[^\d]/g, "").slice(0, 6) } });
+  const poner = (codigo: string, v: string) => onChange({ ...valor, cants: { ...valor.cants, [codigo]: limpiarCantidad(v) } });
   const sumar = (codigo: string, d: number) => poner(codigo, String(Math.max(0, (Number.parseInt(valor.cants[codigo] ?? "", 10) || 0) + d)));
 
   if (grupo) {
@@ -101,7 +106,7 @@ export function SelectorProducto({
             return (
               <li key={t.codigo} className={cn("flex items-center gap-3 px-3.5 py-2.5 transition", n > 0 && "bg-ground/70")}>
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-[14px] font-semibold">{etiquetaTalla(t.talla)}</p>
+                  <p className="truncate text-[14px] font-semibold">{etiquetaTalla(nombreTallaEn(t.talla, grupo.tallas))}</p>
                   <p className={cn("num text-[11.5px]", t.queda <= 0 ? "text-red" : "text-muted")}>{t.queda <= 0 ? "No hay stock" : `Hay ${entero(t.queda)}`}</p>
                 </div>
                 <div className="flex h-11 items-stretch overflow-hidden rounded-xl border border-line bg-surface focus-within:border-ink">

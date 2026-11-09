@@ -1,10 +1,10 @@
 import { Activity, ArrowDownToLine, ArrowUpFromLine, Ban, Plus, Search } from "lucide-react";
 import { useMemo, useState } from "react";
-import { MovChart } from "../components/MovChart";
+import { MovChart } from "../components/MovChartDiferido";
 import { MiniFoto, VisorFoto } from "../components/Evidencia";
-import { Boton, Card, Chip, Kicker, Vacio } from "../components/ui";
-import { movimientosDe, serieDiaria, sumaMovs } from "../lib/derive";
-import { entero, etiquetaTalla, fechaLarga, hoyISO, nombreProducto, partirMovimiento, sumarDias, titulo } from "../lib/format";
+import { Boton, Card, Chip, Vacio } from "../components/ui";
+import { momentoMovimiento, movimientosDe, serieDiaria, sumaMovs } from "../lib/derive";
+import { entero, etiquetaTalla, fechaLarga, hoyISO, norm, nombreProducto, partirMovimiento, sumarDias, titulo } from "../lib/format";
 import type { Movimiento } from "../lib/types";
 import { cn } from "../lib/utils";
 import type { VistaProps } from "./tipos";
@@ -18,7 +18,6 @@ const RANGOS = [
 ];
 const PAGINA = 100;
 
-const hora = (iso: string) => new Date(iso).toLocaleTimeString("es-PE", { hour: "2-digit", minute: "2-digit" });
 const nombreDe = (email: string | null) => (email ? titulo(email.split("@")[0]) : "");
 
 /** "Hoy", "Ayer" o "Jueves 29 oct 2026". */
@@ -33,13 +32,15 @@ function encabezadoDia(iso: string): string {
 
 type Fila = { clave: string; mov: Movimiento };
 
-export function Movimientos({ todos, datos, editor, pedirAnular, abrirRegistro }: VistaProps) {
+export function Movimientos({ todos, datos, editor, pedirAnular, abrirRegistro, faltanDatos }: VistaProps) {
+  const historialIncompleto = faltanDatos.includes("entradas") || faltanDatos.includes("salidas");
   const [tipo, setTipo] = useState<Tipo>("todos");
   const [dias, setDias] = useState(0);
   const [q, setQ] = useState("");
   const [limite, setLimite] = useState(PAGINA);
   const [conAnulados, setConAnulados] = useState(false);
   const [foto, setFoto] = useState<Movimiento | null>(null);
+  const [verGrafico, setVerGrafico] = useState(false);
 
   const empresaDe = useMemo(() => new Map(todos.stock.map((s) => [s.codigo, s.empresa])), [todos.stock]);
   const todosMovs = useMemo(() => movimientosDe(datos, true), [datos]);
@@ -52,18 +53,19 @@ export function Movimientos({ todos, datos, editor, pedirAnular, abrirRegistro }
   }, [todosMovs, dias]);
 
   const visibles = useMemo(() => {
-    const b = q.trim().toLowerCase();
+    const b = norm(q.trim());
     return enRango.filter((m) => {
       if (m.anulado && !conAnulados) return false;
       if (tipo !== "todos" && m.tipo !== tipo) return false;
       if (!b) return true;
-      return `${m.producto} ${m.codigo} ${empresaDe.get(m.codigo) ?? ""} ${m.persona ?? ""} ${m.area ?? ""} ${m.nota ?? ""} ${m.registradoPor ?? ""}`.toLowerCase().includes(b);
+      const nombre = nombreProducto(partirMovimiento(m.producto).nombre, empresaDe.get(m.codigo));
+      return norm(`${nombre} ${m.producto} ${m.codigo} ${empresaDe.get(m.codigo) ?? ""} ${m.persona ?? ""} ${m.area ?? ""} ${m.nota ?? ""} ${m.registradoPor ?? ""}`).includes(b);
     });
   }, [enRango, tipo, q, conAnulados, empresaDe]);
 
-  // Los totales y el grafico nunca cuentan los anulados.
-  const tot = useMemo(() => sumaMovs(enRango), [enRango]);
-  const serie = useMemo(() => serieDiaria(enRango, dias === 0 ? 90 : dias), [enRango, dias]);
+  // Los totales y el grafico siguen la busqueda y los filtros, y nunca cuentan los anulados.
+  const tot = useMemo(() => sumaMovs(visibles), [visibles]);
+  const serie = useMemo(() => serieDiaria(visibles, dias === 0 ? 90 : dias), [visibles, dias]);
   const hayDatos = tot.entradas + tot.salidas > 0;
 
   const dibujados: Fila[] = useMemo(() => visibles.map((m) => ({ clave: m.key, mov: m })), [visibles]);
@@ -78,50 +80,9 @@ export function Movimientos({ todos, datos, editor, pedirAnular, abrirRegistro }
     return grupos;
   }, [dibujados, limite]);
 
-  const resumen = [
-    { etiqueta: "Entraron", valor: `+${entero(tot.entradas)}`, nota: "unidades compradas o repuestas", icono: <ArrowDownToLine className="size-4" />, tono: "" },
-    { etiqueta: "Salieron", valor: tot.salidas ? `−${entero(tot.salidas)}` : "0", nota: "unidades vendidas o entregadas", icono: <ArrowUpFromLine className="size-4" />, tono: "text-red" },
-    {
-      etiqueta: "Diferencia",
-      valor: `${tot.neto > 0 ? "+" : tot.neto < 0 ? "−" : ""}${entero(Math.abs(tot.neto))}`,
-      nota: tot.neto >= 0 ? "el almacén ganó unidades" : "el almacén perdió unidades",
-      icono: <Activity className="size-4" />,
-      tono: "",
-    },
-  ];
-
   const fotoDe = foto ? partirMovimiento(foto.producto) : null;
   return (
     <div className="space-y-5">
-      <div className="grid grid-cols-1 gap-5 sm:grid-cols-3">
-        {resumen.map((s) => (
-          <Card key={s.etiqueta} className="p-5">
-            <div className="flex items-center justify-between text-faint">
-              <Kicker>{s.etiqueta}</Kicker>
-              {s.icono}
-            </div>
-            <p className={cn("display num mt-3 text-4xl font-semibold leading-none", s.tono)}>{s.valor}</p>
-            <p className="mt-2.5 text-[12.5px] text-muted">{s.nota}</p>
-          </Card>
-        ))}
-      </div>
-
-      <Card className="p-6">
-        <Kicker>Evolución</Kicker>
-        <h2 className="display mt-1 text-lg font-semibold">Movimiento por día</h2>
-        <div className="mt-4">
-          {hayDatos ? (
-            <MovChart serie={serie} alto={220} />
-          ) : (
-            <Vacio
-              icono={<Activity className="size-5" />}
-              titulo="No hay movimientos en este periodo"
-              texto="Prueba con un periodo más largo o registra un movimiento."
-            />
-          )}
-        </div>
-      </Card>
-
       <Card className="flex flex-col gap-4 p-4 sm:p-5">
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex h-11 min-w-[220px] flex-1 items-center gap-3 rounded-xl border border-line bg-ground/60 px-3.5 focus-within:border-ink focus-within:bg-surface">
@@ -163,7 +124,39 @@ export function Movimientos({ todos, datos, editor, pedirAnular, abrirRegistro }
         </div>
       </Card>
 
-      {dibujados.length === 0 ? (
+      {historialIncompleto && (
+        <p role="alert" className="rounded-2xl bg-warn-soft px-4 py-3 text-justify text-[13px] font-medium text-warn">
+          Los movimientos no alcanzaron a descargarse antes de perder la señal, así que esta lista está incompleta. Se completa sola cuando vuelva la conexión.
+        </p>
+      )}
+
+      {/* Los totales siguen a los filtros y el gráfico se abre solo si se pide. Con el historial a medias, un total sería falso. */}
+      {!historialIncompleto && <Card className="p-4 sm:p-5">
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-[13.5px]">
+          <span>
+            Entraron <b className="num">+{entero(tot.entradas)}</b>
+          </span>
+          <span>
+            Salieron <b className="num text-red">{tot.salidas ? `−${entero(tot.salidas)}` : "0"}</b>
+          </span>
+          <span className="text-muted">
+            {tot.neto === 0 ? "El almacén quedó igual" : tot.neto > 0 ? `El almacén ganó ${entero(tot.neto)} unidades` : `El almacén perdió ${entero(-tot.neto)} unidades`}
+          </span>
+          {hayDatos && (
+            <button type="button" onClick={() => setVerGrafico((v) => !v)} aria-expanded={verGrafico} className="ml-auto text-[13px] font-semibold text-ink underline decoration-line underline-offset-4 hover:decoration-ink">
+              {verGrafico ? "Ocultar gráfico" : "Ver gráfico por día"}
+            </button>
+          )}
+        </div>
+        {hayDatos && verGrafico && (
+          <div className="mt-4">
+            <p className="mb-2 text-[12.5px] text-muted">Movimiento por día{dias === 0 ? ", últimos 90 días" : ""}</p>
+            <MovChart serie={serie} alto={220} />
+          </div>
+        )}
+      </Card>}
+
+      {historialIncompleto && dibujados.length === 0 ? null : dibujados.length === 0 ? (
         <Card>
           <Vacio
             icono={<Activity className="size-5" />}
@@ -184,8 +177,10 @@ export function Movimientos({ todos, datos, editor, pedirAnular, abrirRegistro }
             {entero(dibujados.length)} {dibujados.length === 1 ? "registro" : "registros"} · del más reciente al más antiguo
           </p>
           {porDia.map((g) => {
-            const ent = g.filas.filter((f) => f.mov.tipo === "entrada" && !f.mov.anulado).length;
-            const sal = g.filas.filter((f) => f.mov.tipo === "salida" && !f.mov.anulado).length;
+            // Se cuenta el día completo, no solo lo que ya se cargó en pantalla.
+            const delDia = dibujados.filter((f) => f.mov.fecha === g.fecha && !f.mov.anulado);
+            const ent = delDia.filter((f) => f.mov.tipo === "entrada").length;
+            const sal = delDia.filter((f) => f.mov.tipo === "salida").length;
             const partes = [ent && `${ent} ${ent === 1 ? "entrada" : "entradas"}`, sal && `${sal} ${sal === 1 ? "salida" : "salidas"}`].filter(Boolean);
             return (
               <section key={g.fecha} aria-label={encabezadoDia(g.fecha)}>
@@ -218,6 +213,7 @@ export function Movimientos({ todos, datos, editor, pedirAnular, abrirRegistro }
 
                           <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-muted">
                             <span className="font-semibold text-ink">{esEntrada ? "Entrada" : "Salida"}</span>
+                            {m.etiqueta && <span className="rounded-md bg-ground px-1.5 py-0.5 font-semibold text-ink">Cambio de prenda</span>}
                             {talla && <span className="rounded-md bg-ground px-1.5 py-0.5 font-semibold text-ink">{etiquetaTalla(talla)}</span>}
                             {empresa && <span>{titulo(empresa)}</span>}
                           </p>
@@ -232,9 +228,11 @@ export function Movimientos({ todos, datos, editor, pedirAnular, abrirRegistro }
                           {!esEntrada && m.nota && <p className="mt-1 text-[13px] text-muted">Nota: {m.nota}</p>}
 
                           <p className="mt-1.5 text-[11.5px] text-faint">
-                            {fechaLarga(m.fecha)} · registrado a las {hora(m.creado)}
+                            {momentoMovimiento(m)}
                             {m.registradoPor ? ` por ${nombreDe(m.registradoPor)}` : ""}
                           </p>
+                          {m.pendiente && <p className="mt-1.5 inline-flex rounded-md bg-warn-soft px-1.5 py-0.5 text-[11.5px] font-semibold text-warn">{m.sinCopia ? "Ya subido: falta actualizar los datos de este dispositivo" : "Por subir: está guardado en este dispositivo"}</p>}
+                          {m.revisar && <p className="mt-1.5 text-[12px] font-semibold text-warn">Por revisar: {m.revisar}</p>}
                           {m.anulado && (
                             <p className="mt-1.5 text-[12px] font-semibold text-red">
                               Anulado por {nombreDe(m.anuladoPor) || "—"}: {m.motivo}
@@ -243,8 +241,8 @@ export function Movimientos({ todos, datos, editor, pedirAnular, abrirRegistro }
                         </div>
 
                         <div className="flex shrink-0 flex-col items-end gap-2">
-                          {(!esEntrada || m.foto) && <MiniFoto ruta={m.foto} onAbrir={() => setFoto(m)} className="size-14" />}
-                          {editor && !m.anulado && (
+                          {(!esEntrada || m.foto) && !m.pendiente && <MiniFoto ruta={m.foto} onAbrir={() => setFoto(m)} className="size-14" />}
+                          {editor && !m.anulado && !m.pendiente && (
                             <button
                               type="button"
                               onClick={() => pedirAnular(m)}
