@@ -20,6 +20,7 @@ import { CampanaReporte, EspacioReporte, RESORTE, useReporte } from "./component
 import { Cuenta } from "./components/Cuenta";
 import { LimiteError } from "./components/LimiteError";
 import { VentanaProducto, VentanaTrabajador } from "./components/Detalles";
+import { AvisoDatos } from "./components/AvisoDatos";
 import { DatosEnVivo, EstadoRed } from "./components/EstadoRed";
 import { Marca } from "./components/Marca";
 import { NecesitaConexion } from "./components/NecesitaConexion";
@@ -30,7 +31,8 @@ import { Boton, BotonReintentar } from "./components/ui";
 import { EsqueletoVista } from "./components/Esqueletos";
 import { AuthProvider, useAuth } from "./lib/auth";
 import { filtrarPorEmpresa, resumir, type GrupoProducto } from "./lib/derive";
-import { edadCopia, fechaLarga, titulo } from "./lib/format";
+import { textoFalloServidor } from "./lib/avisoDatos";
+import { fechaLarga, titulo } from "./lib/format";
 import { conProvisional } from "./lib/offline/provisional";
 import { usePwa } from "./lib/offline/pwa";
 import { useRespaldo } from "./lib/offline/useRespaldo";
@@ -86,7 +88,7 @@ function Tablero() {
   const [quienEscrito, setAutor] = useQuien();
   // Con sesión firma el correo de la cuenta; sin sesión, el nombre que se escribió en este dispositivo.
   const autor = sesion?.user.email ?? quienEscrito;
-  const { datos: delServidor, cargando, error, cambioAt, ultimaCarga, tiempoReal, recargar, copiaLista, faltan } = useLiveData(true);
+  const { datos: delServidor, cargando, error, cambioAt, ultimaCarga, ultimaLectura, tiempoReal, recargar, copiaLista, faltan } = useLiveData(true);
   const respaldo = useRespaldo(recargar, sesion?.user.id ?? null, cuentaVencida?.id ?? null);
   const { enLinea } = respaldo;
   // Lo que se ve incluye lo que todavía no subió. El servidor no sabe de ello: por eso los PDF usan delServidor.
@@ -223,10 +225,8 @@ function Tablero() {
   };
 
   const actual = NAV.find((n) => n.id === vista)!;
-  const estadoRed = { r: respaldo, errorDatos: error !== null, tiempoReal, ultimaCarga, alAbrir: () => irA("respaldo") };
-  const registros = (n: number) => `${n} ${n === 1 ? "registro" : "registros"}`;
-  // Sin señal, una copia de hace semanas se ve igual que una de hace minutos: la edad se dice.
-  const edad = !enLinea ? edadCopia(ultimaCarga, Date.now()) : null;
+  // "Conectado" exige una lectura del servidor en esta sesión: la hora de la copia guardada no prueba que haya red.
+  const estadoRed = { r: respaldo, errorDatos: error !== null, tiempoReal, ultimaCarga: ultimaLectura, alAbrir: () => irA("respaldo") };
   // Hay badge en Respaldo solo cuando algo espera o necesita mirarse.
   const avisosRespaldo = respaldo.porSubir + respaldo.porRevisar;
   // Sin el catálogo no hay nada que mostrar: un fallo así ocupa la pantalla entera, nunca como "almacén vacío".
@@ -373,23 +373,13 @@ function Tablero() {
         {error === "servidor" && !sinNada && (
           <div role="alert" className="mb-5 flex flex-wrap items-center gap-3 rounded-2xl bg-red-soft px-4 py-3 text-[13px] text-red">
             <AlertCircle className="size-4 shrink-0" />
-            <span className="min-w-0 flex-1">El servidor no entregó los datos. Se reintentará solo; mientras tanto ves lo último que llegó.</span>
+            <span className="min-w-0 flex-1">{textoFalloServidor(ultimaCarga, Date.now())}</span>
             <BotonReintentar alReintentar={recargar} />
           </div>
         )}
         {vista !== "respaldo" && !cargando && error !== "sin-copia" && (!enLinea || provisionales > 0) && (
-          <div className="no-print mb-5 flex items-start gap-3 rounded-2xl bg-warn-soft px-4 py-3 text-justify text-[13px] font-medium text-warn" data-testid="aviso-provisional">
-            <WifiOff className="mt-0.5 size-4 shrink-0" />
-            <span>
-              {sinSubir > 0
-                ? `Cifras provisionales: falta subir ${registros(sinSubir)}.${edad ? ` Los datos son ${edad}.` : ""}`
-                : provisionales > 0
-                  ? `Cifras provisionales: ${registros(provisionales)} ya en el servidor, pero todavía no en los datos de este dispositivo.${edad ? ` Los datos son ${edad}.` : ""}`
-                  : edad
-                    ? `Sin conexión: ves los datos ${edad}.`
-                    : "Sin conexión: ves los datos de la última vez que hubo señal."}
-            </span>
-          </div>
+          // Sin señal, una copia de hace semanas se ve igual que una de hace minutos: se dice de cuándo es.
+          <AvisoDatos enLinea={enLinea} sinSubir={sinSubir} provisionales={provisionales} guardadoEn={ultimaCarga} />
         )}
         {vista !== "respaldo" && !cargando && faltan.length > 0 && error === null && (
           <div role="alert" className="no-print mb-5 flex items-start gap-3 rounded-2xl bg-warn-soft px-4 py-3 text-justify text-[13px] font-medium text-warn">

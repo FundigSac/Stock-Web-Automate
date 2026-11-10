@@ -70,6 +70,8 @@ export function useLiveData(activo: boolean) {
   const [error, setError] = useState<string | null>(null);
   const [cambioAt, setCambioAt] = useState<number | null>(null);
   const [ultimaCarga, setUltimaCarga] = useState<number | null>(null);
+  // Solo lecturas del servidor: la copia guardada pone `ultimaCarga`, pero no prueba que haya conexión.
+  const [ultimaLectura, setUltimaLectura] = useState<number | null>(null);
   const [tiempoReal, setTiempoReal] = useState(false);
   const [copiaLista, setCopiaLista] = useState(false);
   const [faltan, setFaltan] = useState<Campo[]>([]);
@@ -140,7 +142,9 @@ export function useLiveData(activo: boolean) {
         }
         // Una lectura parcial no prueba que lo que falló antes ya cargue.
         setError((e) => (e === "servidor" && !completa ? e : null));
-        setUltimaCarga(Date.now());
+        const leido = Date.now();
+        setUltimaCarga(leido);
+        setUltimaLectura(leido);
         marcarRedOk();
         if (!primera.current && cambios.some(Boolean)) setCambioAt(Date.now());
         return true;
@@ -252,5 +256,5 @@ export function useLiveData(activo: boolean) {
     return ok ? { ...VACIO, ...enMemoria.current } : null;
   }, [cargar]);
 
-  return { datos, cargando, error, cambioAt, ultimaCarga, tiempoReal, recargar, copiaLista, faltan };
+  return { datos, cargando, error, cambioAt, ultimaCarga, ultimaLectura, tiempoReal, recargar, copiaLista, faltan };
 }
