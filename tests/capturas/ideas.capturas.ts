@@ -20,6 +20,7 @@ const enVivo = (page: Page) => page.getByRole("status").filter({ hasText: /En vi
 const irA = (page: Page, nombre: RegExp) => page.getByRole("navigation", { name: "Secciones" }).filter({ visible: true }).getByRole("button", { name: nombre }).click();
 
 async function foto(page: Page, nombre: string, ancho: number, completa = true) {
+  if (completa) await page.evaluate(() => window.scrollTo(0, 0));
   await page.waitForTimeout(1200);
   await page.screenshot({ path: join(DESTINO, `${nombre}-${ancho}-${FASE}.png`), fullPage: completa, animations: "disabled" });
 }
@@ -44,7 +45,9 @@ for (const [ancho, alto] of ANCHOS) {
       await foto(page, "detalle-producto", ancho, false);
       await page.keyboard.press("Escape");
       await irA(page, /^Movimientos/);
+      await expect(page.locator("h1")).toHaveText("Movimientos");
       const anulados = page.getByRole("button", { name: /Mostrar anulados/ });
+      await expect(anulados).toBeVisible();
       if (await anulados.count()) await anulados.click();
       await foto(page, "movimientos", ancho);
       await irA(page, /^Trabajadores/);
