@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { estadoCarga } from "../../src/lib/carga";
+import { desplazamientoPildora } from "../../src/lib/navegacion";
 import { agruparProductos, entregasDe, estadoProducto, GRAVEDAD, lecturas, resumir, signoMovimiento, textoEstadoProducto } from "../../src/lib/derive";
 import { camposFaltantes, type Campo } from "../../src/lib/useLiveData";
 import { entero } from "../../src/lib/format";
@@ -100,5 +101,17 @@ describe("X10-4: cargando, error con reintento y vacío de verdad son cosas dist
   it("camposFaltantes distingue una tabla vacía de una que no llegó", () => {
     expect(camposFaltantes({ stock: [], entradas: [], salidas: [], trabajadores: [], pedidos: [] })).toEqual([]);
     expect(camposFaltantes({ stock: [], trabajadores: [] })).toEqual(["entradas", "salidas", "pedidos"]);
+  });
+});
+
+describe("B16-4 + B5-1: la píldora de la barra inferior se mueve solo con transform", () => {
+  const ids = ["resumen", "stock", "movimientos", "trabajadores", "respaldo"];
+  it("se desplaza una columna entera por sección", () => {
+    expect(desplazamientoPildora(ids, "resumen")).toBe("translateX(0%)");
+    expect(desplazamientoPildora(ids, "movimientos")).toBe("translateX(200%)");
+    expect(desplazamientoPildora(ids, "respaldo")).toBe("translateX(400%)");
+  });
+  it("una sección desconocida no la saca de la barra", () => {
+    expect(desplazamientoPildora(ids, "otra")).toBe("translateX(0%)");
   });
 });

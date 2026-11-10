@@ -37,6 +37,7 @@ import { useRespaldo } from "./lib/offline/useRespaldo";
 import type { Movimiento } from "./lib/types";
 import { useQuien } from "./lib/quien";
 import { useLiveData } from "./lib/useLiveData";
+import { desplazamientoPildora } from "./lib/navegacion";
 import { cn } from "./lib/utils";
 import { Movimientos } from "./views/Movimientos";
 import { Respaldo } from "./views/Respaldo";
@@ -61,12 +62,13 @@ function primeraVezListaOffline(): boolean {
   return true;
 }
 
-const NAV: { id: Vista; texto: string; sub: string; icono: LucideIcon }[] = [
-  { id: "resumen", texto: "Resumen", sub: "Todo lo importante de un vistazo", icono: LayoutDashboard },
-  { id: "stock", texto: "Stock", sub: "Cuánto queda de cada producto y talla", icono: Package },
+/** `relleno`: el icono activo se rellena (B5-1); Actividad es una línea abierta y solo se engrosa. */
+const NAV: { id: Vista; texto: string; sub: string; icono: LucideIcon; relleno?: boolean }[] = [
+  { id: "resumen", texto: "Resumen", sub: "Todo lo importante de un vistazo", icono: LayoutDashboard, relleno: true },
+  { id: "stock", texto: "Stock", sub: "Cuánto queda de cada producto y talla", icono: Package, relleno: true },
   { id: "movimientos", texto: "Movimientos", sub: "Lo que entra y lo que sale", icono: Activity },
-  { id: "trabajadores", texto: "Trabajadores", sub: "Quién recibió qué", icono: Users },
-  { id: "respaldo", texto: "Respaldo", sub: "Lo guardado en este dispositivo", icono: DatabaseBackup },
+  { id: "trabajadores", texto: "Trabajadores", sub: "Quién recibió qué", icono: Users, relleno: true },
+  { id: "respaldo", texto: "Respaldo", sub: "Lo guardado en este dispositivo", icono: DatabaseBackup, relleno: true },
 ];
 
 export default function App() {
@@ -445,24 +447,40 @@ function Tablero() {
       {puede && !asistente && <BotonAsistente onClick={() => abrirChat()} />}
 
       {/* Navegacion inferior en celular */}
-      <div className="no-print fixed inset-x-3 bottom-3 z-40 lg:hidden">
-        <nav className="flex rounded-2xl border border-line bg-surface/95 p-1.5 shadow-pop backdrop-blur" aria-label="Secciones">
-          {NAV.map((n) => (
-            <button
-              key={n.id}
-              type="button"
-              onClick={() => irA(n.id)}
-              aria-current={vista === n.id ? "page" : undefined}
-              className={cn(
-                "relative flex min-w-0 flex-1 flex-col items-center gap-1 rounded-xl py-2 text-[10px] font-semibold transition",
-                vista === n.id ? "bg-ink text-white" : "text-muted",
-              )}
-            >
-              <n.icono className="size-[18px]" />
-              <span className="max-w-full truncate px-0.5">{n.texto}</span>
-              {n.id === "respaldo" && avisosRespaldo > 0 && <span className="num absolute right-1 top-1 rounded-full bg-warn px-1.5 text-[10px] text-white">{avisosRespaldo}</span>}
-            </button>
-          ))}
+      <div className="no-print fixed inset-x-2 bottom-3 z-40 lg:hidden">
+        {/* B16-4 + B5-1: píldora roja Slab al 12 % detrás del icono activo, etiquetas siempre visibles.
+            La píldora es una sola y se desliza solo con transform; con movimiento reducido salta sin animar. */}
+        <nav className="relative grid grid-cols-5 rounded-2xl border border-line bg-surface/95 p-1 shadow-pop backdrop-blur" aria-label="Secciones">
+          <span
+            aria-hidden
+            data-pildora
+            className="pointer-events-none absolute left-1 top-2 flex h-8 justify-center transition-transform duration-300 ease-[cubic-bezier(0.2,0.8,0.2,1)] motion-reduce:transition-none"
+            style={{ width: "calc((100% - 0.5rem) / 5)", transform: desplazamientoPildora(NAV.map((n) => n.id), vista) }}
+          >
+            <span className="h-8 w-14 rounded-full bg-red/12" />
+          </span>
+          {NAV.map((n) => {
+            const activo = vista === n.id;
+            return (
+              <button
+                key={n.id}
+                type="button"
+                onClick={() => irA(n.id)}
+                aria-current={activo ? "page" : undefined}
+                className={cn(
+                  "relative flex min-h-14 min-w-0 flex-col items-center gap-1 rounded-xl pb-1.5 pt-1 font-semibold leading-none transition-colors",
+                  "text-[11px] min-[380px]:text-[12px] focus-visible:outline-2 focus-visible:outline-ink",
+                  activo ? "text-ink" : "text-muted",
+                )}
+              >
+                <span className="grid h-8 w-14 place-items-center">
+                  <n.icono className="size-5" strokeWidth={activo ? 2.25 : 2} fill={activo && n.relleno ? "currentColor" : "none"} fillOpacity={activo && n.relleno ? 0.18 : 0} data-relleno={activo && n.relleno ? "" : undefined} />
+                </span>
+                <span className="max-w-full whitespace-nowrap tracking-[-0.01em]">{n.texto}</span>
+                {n.id === "respaldo" && avisosRespaldo > 0 && <span className="num absolute right-1 top-0.5 rounded-full bg-warn px-1.5 text-[10px] leading-4 text-white">{avisosRespaldo}</span>}
+              </button>
+            );
+          })}
         </nav>
       </div>
 

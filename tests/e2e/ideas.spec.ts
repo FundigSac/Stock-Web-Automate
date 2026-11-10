@@ -219,3 +219,68 @@ test.describe("B12-1 esqueletos mientras cargan los datos", () => {
     });
   }
 });
+
+test.describe("B16-4 + B5-1 barra inferior con píldora", () => {
+  const barra = (page: Page) => page.getByRole("navigation", { name: "Secciones" }).filter({ visible: true });
+
+  /** Centro horizontal de la píldora y del botón activo. */
+  async function centros(page: Page) {
+    const pildora = await barra(page).locator("[data-pildora] > span").boundingBox();
+    const activo = await barra(page).locator('[aria-current="page"]').boundingBox();
+    return { pildora: pildora!.x + pildora!.width / 2, activo: activo!.x + activo!.width / 2, alto: pildora!.height, ancho: pildora!.width };
+  }
+
+  for (const ancho of [360, 390]) {
+    test(`etiquetas siempre visibles y píldora bajo el activo a ${ancho}px`, async ({ page }) => {
+      await page.setViewportSize({ width: ancho, height: 800 });
+      await abrir(page);
+      const nav = barra(page);
+      const botones = nav.getByRole("button");
+      await expect(botones).toHaveCount(5);
+      for (const t of ["Resumen", "Stock", "Movimientos", "Trabajadores", "Respaldo"]) {
+        const etiqueta = nav.getByText(t, { exact: true });
+        await expect(etiqueta).toBeVisible();
+        // Sin recortes: el texto entero cabe en su botón.
+        expect(await etiqueta.evaluate((e) => e.scrollWidth <= e.clientWidth + 0.5)).toBe(true);
+        expect(Number.parseFloat(await etiqueta.evaluate((e) => getComputedStyle(e).fontSize))).toBeGreaterThanOrEqual(11);
+      }
+      for (const [i, v] of (["Resumen", "Movimientos", "Respaldo", "Stock"] as const).entries()) {
+        await irA(page, new RegExp(`^${v}`));
+        const activo = nav.locator('[aria-current="page"]');
+        await expect(activo).toHaveText(v);
+        await expect(activo.locator("svg[data-relleno]")).toHaveCount(v === "Movimientos" ? 0 : 1);
+        await expect(nav.locator("svg[data-relleno]")).toHaveCount(v === "Movimientos" ? 0 : 1);
+        await expect.poll(async () => Math.abs((await centros(page)).pildora - (await centros(page)).activo), `píldora bajo ${v} (${i})`).toBeLessThan(1.5);
+      }
+      const c = await centros(page);
+      expect(c.alto).toBe(32);
+      expect(c.ancho).toBe(56);
+    });
+  }
+
+  test("la píldora solo anima transform, en rojo Slab al 12 %", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await abrir(page);
+    const pildora = barra(page).locator("[data-pildora]");
+    // Tailwind 4 nombra la familia completa de transform; nada de left, width ni color.
+    const props = (await pildora.evaluate((e) => getComputedStyle(e).transitionProperty)).split(", ");
+    expect(props.every((p) => ["transform", "translate", "scale", "rotate"].includes(p))).toBe(true);
+    expect(await pildora.evaluate((e) => getComputedStyle(e).transitionDuration)).toBe("0.3s");
+    const color = await pildora.locator("span").evaluate((e) => getComputedStyle(e).backgroundColor);
+    // #d7261e al 12 %: canal alfa 0,12 (Chromium lo da en oklab o srgb según la versión).
+    expect(color).toMatch(/\/ 0\.12\)|, 0\.12\)/);
+  });
+
+  test("con movimiento reducido la píldora salta sin animar", async ({ browser }) => {
+    const context = await browser.newContext({ reducedMotion: "reduce", viewport: { width: 390, height: 844 } });
+    const page = await context.newPage();
+    await abrir(page);
+    const pildora = barra(page).locator("[data-pildora]");
+    expect(await pildora.evaluate((e) => getComputedStyle(e).transitionProperty)).toBe("none");
+    await irA(page, /^Trabajadores/);
+    // Sin esperar: ya está en su sitio en el siguiente cuadro.
+    const [p, a] = await Promise.all([pildora.locator("span").boundingBox(), barra(page).locator('[aria-current="page"]').boundingBox()]);
+    expect(Math.abs(p!.x + p!.width / 2 - (a!.x + a!.width / 2))).toBeLessThan(1.5);
+    await context.close();
+  });
+});
