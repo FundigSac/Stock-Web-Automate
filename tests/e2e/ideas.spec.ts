@@ -284,3 +284,63 @@ test.describe("B16-4 + B5-1 barra inferior con píldora", () => {
     await context.close();
   });
 });
+
+test.describe("B9-3 objetivos táctiles de 48 px en el celular", () => {
+  /** Mide cada control visible (fuera de la barra lateral de escritorio y de los enlaces dentro de un párrafo). */
+  async function medir(page: Page, donde: string) {
+    // Una ventana que se está abriendo todavía está algo escalada: se mide cuando termina.
+    await page.evaluate(() => Promise.all(document.getAnimations().filter((a) => a.effect?.getTiming().iterations !== Infinity).map((a) => a.finished.catch(() => undefined))));
+    return page.evaluate((donde) => {
+      const sel = 'button, select, textarea, a[href], [role="tab"], [role="menuitem"], input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="hidden"])';
+      const chicos: string[] = [];
+      let medidos = 0;
+      for (const e of document.querySelectorAll<HTMLElement>(sel)) {
+        if (e.closest("p, aside") || e.classList.contains("sr-only")) continue;
+        const r = e.getBoundingClientRect();
+        if (r.width === 0 || r.height === 0 || getComputedStyle(e).visibility === "hidden") continue;
+        medidos++;
+        if (r.height < 47.5 || r.width < 47.5) chicos.push(`${donde}: <${e.tagName.toLowerCase()}> "${(e.getAttribute("aria-label") ?? e.textContent ?? "").trim().slice(0, 40)}" ${Math.round(r.width)}×${Math.round(r.height)}`);
+      }
+      return { chicos, medidos };
+    }, donde);
+  }
+
+  test("todas las acciones y campos a 390 px miden al menos 48×48", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await abrir(page);
+    const chicos: string[] = [];
+    let medidos = 0;
+    const anotar = (r: { chicos: string[]; medidos: number }) => {
+      chicos.push(...r.chicos);
+      medidos += r.medidos;
+    };
+    anotar(await medir(page, "Resumen"));
+    for (const v of ["Stock", "Movimientos", "Trabajadores", "Respaldo"]) {
+      await irA(page, new RegExp(`^${v}`));
+      await expect(page.locator("h1")).toHaveText(v);
+      anotar(await medir(page, v));
+    }
+    await irA(page, /^Stock/);
+    await page.getByRole("button", { name: /^Lista/ }).click();
+    anotar(await medir(page, "Stock en lista"));
+    await page.getByRole("button", { name: /^Por producto/ }).click();
+    await page.getByRole("button", { name: /Polo Azul/ }).first().click();
+    await expect(page.getByRole("dialog")).toBeVisible();
+    anotar(await medir(page, "Ficha del producto"));
+    await page.getByRole("dialog").getByRole("button", { name: "Agregar stock" }).click();
+    const registro = page.getByRole("dialog");
+    await expect(registro.getByRole("tab", { name: /Salida/ })).toBeVisible();
+    anotar(await medir(page, "Registrar entrada"));
+    await registro.getByRole("tab", { name: /Salida/ }).click();
+    anotar(await medir(page, "Registrar salida"));
+    expect(chicos, chicos.join("\n")).toEqual([]);
+    expect(medidos).toBeGreaterThan(80);
+  });
+
+  test("en escritorio no cambia el tamaño de los controles", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await abrir(page);
+    const pdf = await page.getByRole("button", { name: "PDF" }).boundingBox();
+    expect(pdf!.height).toBe(40);
+  });
+});

@@ -152,6 +152,19 @@ body {
   min-width: 0;
 }
 
+/* B9-3: en el celular, y en cualquier pantalla táctil, todo lo que se toca mide al menos 48 px: en campo se usa con guantes.
+   Va en la capa base para que una clase más grande (min-h-14) siga mandando; los enlaces dentro de un párrafo quedan como texto. */
+@layer base {
+  @media (max-width: 639px), (pointer: coarse) {
+    :where(button, select, textarea, a[href], [role="tab"], [role="menuitem"], input:not([type="checkbox"], [type="radio"], [type="range"], [type="file"], [type="hidden"])):not(p *, .sr-only) {
+      min-height: 48px;
+    }
+    :where(button, a[href], [role="tab"], [role="menuitem"]):not(p *, .sr-only) {
+      min-width: 48px;
+    }
+  }
+}
+
 /* En el celular los campos de 16 px evitan que el navegador haga zoom al tocarlos */
 @media (max-width: 639px) {
   input,
