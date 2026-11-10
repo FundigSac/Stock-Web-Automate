@@ -309,6 +309,8 @@ function Tablero() {
             </Boton>
           </div>
         </div>
+        {/* Entrada "Línea de flujo": index.html marca el html una vez por sesión y el CSS la anima. */}
+        <div className="fx-flow-line" aria-hidden="true" />
       </header>
 
       <main className="mx-auto max-w-[1480px] px-4 pb-44 pt-6 lg:px-8 lg:pb-12">

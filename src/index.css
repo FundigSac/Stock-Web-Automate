@@ -153,18 +153,18 @@ body {
 .sin-barra::-webkit-scrollbar { display: none; }
 
 /* Entrada "Línea de flujo" (Report/04-design-decisions.md): 0,9 s, una vez por sesión, sin bloquear nada.
+   Corre por el borde inferior de la cabecera, con la tinta de la paleta Slab.
    Sin JS o con movimiento reducido la capa no existe. Solo anima transform y opacity. */
 .fx-flow-line { display: none; }
 html[data-intro] .fx-flow-line {
   display: block;
-  position: fixed;
-  top: 56px;
+  position: absolute;
+  bottom: -1px;
   left: 0;
   right: 0;
   height: 3px;
-  z-index: 56;
   pointer-events: none;
-  background: var(--color-action);
+  background: var(--color-ink);
   transform-origin: left;
   animation:
     fx-flow 600ms cubic-bezier(0.16, 1, 0.3, 1) backwards,
