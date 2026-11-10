@@ -161,7 +161,8 @@ export function Cuenta({ avisar, puede, porSubir }: { avisar: (t: string) => voi
         className="flex h-10 items-center gap-2 rounded-xl border border-line bg-surface pl-1.5 pr-3 text-sm font-semibold transition hover:bg-ground disabled:opacity-60"
       >
         <span className="grid size-7 place-items-center rounded-lg bg-ink text-[11px] font-semibold text-white">{saliendo ? <Loader2 className="size-3.5 animate-spin" /> : iniciales(email ?? "?")}</span>
-        <span className="hidden max-w-[120px] truncate sm:inline">{saliendo ? "Cerrando sesión…" : (email ?? "").split("@")[0]}</span>
+        {/* En el celular el nombre no se ve, pero se lee: con solo la inicial, un lector de pantalla diría "A". */}
+        <span className="sr-only max-w-[120px] truncate sm:not-sr-only sm:inline">{saliendo ? "Cerrando sesión…" : (email ?? "").split("@")[0]}</span>
         <ChevronDown className="size-3.5 text-faint" />
       </button>
       <AnimatePresence>
