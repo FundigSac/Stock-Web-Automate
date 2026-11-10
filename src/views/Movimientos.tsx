@@ -6,6 +6,7 @@ import { Boton, CantidadMov, Card, Chip, FallaCarga, Kicker, MarcaAnulado, Vacio
 import { momentoMovimiento, movimientosDe, serieDiaria, sumaMovs } from "../lib/derive";
 import { entero, etiquetaTalla, fechaLarga, hoyISO, norm, nombreProducto, partirMovimiento, sumarDias, titulo } from "../lib/format";
 import type { Movimiento } from "../lib/types";
+import { useListaConFlechas } from "../lib/teclado";
 import { cn } from "../lib/utils";
 import type { VistaProps } from "./tipos";
 
@@ -78,6 +79,10 @@ export function Movimientos({ todos, datos, editor, pedirAnular, abrirRegistro, 
     }
     return grupos;
   }, [dibujados, limite]);
+
+  // B23-3: recorrer el historial con las flechas. Solo cuentan las filas que ya están en pantalla.
+  const claves = useMemo(() => dibujados.slice(0, limite).map((f) => f.clave), [dibujados, limite]);
+  const nav = useListaConFlechas(claves);
 
   const resumen = [
     { etiqueta: "Entraron", valor: `+${entero(tot.entradas)}`, nota: "unidades compradas o repuestas", icono: <ArrowUp className="size-4" />, tono: "" },
@@ -187,9 +192,10 @@ export function Movimientos({ todos, datos, editor, pedirAnular, abrirRegistro, 
           )}
         </Card>
       ) : (
-        <div className="space-y-6">
+        <div className="relative space-y-6" data-testid="lista-movimientos" {...nav.props}>
           <p className="px-1 text-[12.5px] text-muted">
             {entero(dibujados.length)} {dibujados.length === 1 ? "registro" : "registros"} · del más reciente al más antiguo
+            <span className="hidden lg:inline"> · con el teclado, ↑ y ↓ pasan de uno a otro</span>
           </p>
           {porDia.map((g) => {
             // Se cuenta el día completo, no solo lo que ya se cargó en pantalla.
@@ -209,7 +215,14 @@ export function Movimientos({ todos, datos, editor, pedirAnular, abrirRegistro, 
                     const empresa = empresaDe.get(m.codigo) ?? null;
                     const esEntrada = m.tipo === "entrada";
                     return (
-                      <div key={clave} className={cn("flex items-start gap-3 p-4", m.anulado && "opacity-55")}>
+                      <article
+                        key={clave}
+                        ref={nav.registrar(clave)}
+                        tabIndex={nav.actual === clave ? 0 : -1}
+                        data-activa={nav.actual === clave || undefined}
+                        // El foco se ve con el resaltado que se desliza (abajo), no con el contorno del navegador.
+                        className={cn("flex items-start gap-3 p-4 outline-none", m.anulado && "opacity-55")}
+                      >
                         <span
                           className={cn("mt-0.5 grid size-10 shrink-0 place-items-center rounded-full", esEntrada ? "bg-ground text-ink" : "bg-red-soft text-red")}
                           aria-hidden
@@ -265,7 +278,7 @@ export function Movimientos({ todos, datos, editor, pedirAnular, abrirRegistro, 
                             </button>
                           )}
                         </div>
-                      </div>
+                      </article>
                     );
                   })}
                 </Card>
@@ -276,6 +289,15 @@ export function Movimientos({ todos, datos, editor, pedirAnular, abrirRegistro, 
             <div className="flex justify-center">
               <Boton onClick={() => setLimite((l) => l + PAGINA)}>Mostrar más ({entero(dibujados.length - limite)} restantes)</Boton>
             </div>
+          )}
+          {/* Un solo resaltado para toda la lista: se desliza a la fila con el foco. Con movimiento reducido salta sin animar. */}
+          {nav.resalte && (
+            <div
+              aria-hidden
+              data-testid="resalte-lista"
+              className="resalte-lista pointer-events-none absolute inset-x-0 top-0 z-10 rounded-2xl ring-2 ring-ink"
+              style={{ transform: `translateY(${nav.resalte.top}px)`, height: nav.resalte.alto }}
+            />
           )}
         </div>
       )}

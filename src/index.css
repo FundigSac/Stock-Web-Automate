@@ -200,3 +200,11 @@ html[data-intro] .fx-flow-line {
 @keyframes fx-flow { from { transform: scaleX(0); } }
 @keyframes fx-out { to { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .fx-flow-line { display: none !important; } }
+
+/* B23-3: el resaltado de Movimientos se desliza de fila en fila. Solo anima transform y alto; con movimiento reducido salta. */
+.resalte-lista {
+  transition: transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1), height 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .resalte-lista { transition: none; }
+}
