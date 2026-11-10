@@ -16,11 +16,11 @@ import {
 } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BotonAsistente } from "./components/BotonAsistente";
-import { AvisoReporte } from "./components/CampanaReporte";
+import { CampanaReporte, EspacioReporte, RESORTE, useReporte } from "./components/CampanaReporte";
 import { Cuenta } from "./components/Cuenta";
 import { LimiteError } from "./components/LimiteError";
 import { VentanaProducto, VentanaTrabajador } from "./components/Detalles";
-import { EstadoRed } from "./components/EstadoRed";
+import { DatosEnVivo, EstadoRed } from "./components/EstadoRed";
 import { Marca } from "./components/Marca";
 import { NecesitaConexion } from "./components/NecesitaConexion";
 import { NuevoProductoDialog, NuevoTrabajadorDialog } from "./components/Nuevo";
@@ -140,6 +140,8 @@ function Tablero() {
     temporizadorAviso.current = window.setTimeout(() => setAviso(null), 2600);
   }, [cambioAt]);
 
+  // El reporte semanal sale de los datos del servidor: lo que todavía no subió no puede ir en él.
+  const reporte = useReporte({ todos: delServidor, autor, avisar: mostrar, recargar, errorDatos: error === "servidor", dueno: sesion?.user.id ?? null });
   const minimo = todos.sync?.stock_minimo ?? 2;
   // Registro abierto: cualquiera registra. Si se cierra (ajustes.registro_abierto = false), solo las cuentas autorizadas.
   // Mientras no se sepa, cerrado: no se ofrece registrar a quien quizá no pueda.
@@ -257,20 +259,33 @@ function Tablero() {
         </nav>
 
         <div className="mt-auto space-y-3">
-          <EstadoRed {...estadoRed} />
-          {ultimoMovimiento && <p className="px-1 text-[12px] leading-relaxed text-muted">Último movimiento: {fechaLarga(ultimoMovimiento)}</p>}
+          <DatosEnVivo cargando={cargando} ultimaCarga={ultimaCarga} ultimoMovimiento={ultimoMovimiento ? fechaLarga(ultimoMovimiento) : null} />
         </div>
       </aside>
 
       {/* Cabecera */}
-      <header className="sticky top-0 z-30 border-b border-line-2/70 bg-ground/85 backdrop-blur-md">
+      <header className={cn("z-30 border-b border-line-2/70 bg-ground/85 backdrop-blur-md", reporte.unido ? "relative" : "sticky top-0")}>
         <div className="mx-auto flex max-w-[1480px] flex-wrap items-center gap-x-4 gap-y-3 px-4 py-4 lg:px-8">
-          <div className="mr-auto w-full min-w-0 sm:w-auto">
-            <h1 className="display text-2xl font-semibold leading-tight lg:text-[28px]">{actual.texto}</h1>
-            <p className="truncate text-[13px] text-muted">{actual.sub}</p>
-          </div>
+          {/* Celular: titulo y campana en una fila (la isla baja justo debajo y empuja lo demas). Pantalla grande: sin caja propia. */}
+          <motion.div
+            data-fila-titulo
+            className="flex w-full items-center gap-3 sm:contents"
+            initial={false}
+            animate={{ marginBottom: reporte.modo === "cerrada" ? 0 : reporte.empujeMovil }}
+            transition={RESORTE}
+          >
+            <div className="mr-auto min-w-0">
+              <h1 className="display text-2xl font-semibold leading-tight lg:text-[28px]">{actual.texto}</h1>
+              <p className="truncate text-[13px] text-muted">{actual.sub}</p>
+            </div>
+            {!cargando && (
+              <div className="no-print shrink-0 sm:order-3">
+                <CampanaReporte r={reporte} />
+              </div>
+            )}
+          </motion.div>
 
-          <div className="no-print flex flex-wrap items-center gap-2.5">
+          <div className="no-print flex flex-wrap items-center gap-2.5 sm:order-2">
             {/* Trabajadores y Respaldo no dependen de la empresa: ahí el filtro no haría nada. */}
             {vista !== "trabajadores" && vista !== "respaldo" && (
             <div className="relative">
@@ -290,6 +305,8 @@ function Tablero() {
               <ChevronDown className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-faint" />
             </div>
             )}
+
+            <EstadoRed {...estadoRed} />
 
             {puede && (
               <Boton variante="ink" className="hidden sm:inline-flex" onClick={() => setRegistro(true)}>
@@ -313,7 +330,10 @@ function Tablero() {
         <div className="fx-flow-line" aria-hidden="true" />
       </header>
 
-      <main className="mx-auto max-w-[1480px] px-4 pb-44 pt-6 lg:px-8 lg:pb-12">
+      {/* La isla del reporte semanal sale de la campana; este espacio baja el contenido mientras esta abierta */}
+      {!cargando && <EspacioReporte r={reporte} />}
+
+      <main className="mx-auto max-w-[1480px] px-4 pb-28 pt-6 lg:px-8 lg:pb-12">
         {cuentaVencida && !sesion && (
           <div role="alert" className="no-print mb-5 flex items-start gap-3 rounded-2xl bg-warn-soft px-4 py-3 text-[13px] font-medium text-warn">
             <AlertCircle className="mt-0.5 size-4 shrink-0" />
@@ -334,7 +354,6 @@ function Tablero() {
             <p className="flex-1">Hay otra pestaña abierta con una versión anterior de la app. Ciérrala para poder guardar en este dispositivo.</p>
           </div>
         )}
-        {!cargando && <AvisoReporte todos={delServidor} autor={autor} avisar={mostrar} recargar={recargar} errorDatos={error === "servidor"} dueno={sesion?.user.id ?? null} />}
         {nuevaVersion && (
           <div className="no-print mb-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-surface px-4 py-3 text-[13px] shadow-card">
             <span>Hay una versión nueva de la app.</span>
@@ -412,18 +431,17 @@ function Tablero() {
         <button
           type="button"
           onClick={() => setRegistro(true)}
-          className="no-print fixed bottom-[8.75rem] right-4 z-40 inline-flex h-14 items-center gap-2 rounded-full bg-ink px-5 text-sm font-semibold text-white shadow-pop transition active:scale-95 sm:hidden"
+          className="no-print fixed bottom-24 right-4 z-40 inline-flex h-14 items-center gap-2 rounded-full bg-ink px-5 text-sm font-semibold text-white shadow-pop transition active:scale-95 sm:hidden"
         >
           <Plus className="size-5" /> Registrar
         </button>
       )}
 
-      {/* En pantallas grandes el asistente tiene su botón; en el celular se abre desde Registrar */}
+      {/* Asistente: solo para agregar stock o crear */}
       {puede && !asistente && <BotonAsistente onClick={() => abrirChat()} />}
 
       {/* Navegacion inferior en celular */}
-      <div className="no-print fixed inset-x-3 bottom-3 z-40 space-y-1.5 lg:hidden">
-        <EstadoRed {...estadoRed} className="shadow-card" />
+      <div className="no-print fixed inset-x-3 bottom-3 z-40 lg:hidden">
         <nav className="flex rounded-2xl border border-line bg-surface/95 p-1.5 shadow-pop backdrop-blur" aria-label="Secciones">
           {NAV.map((n) => (
             <button
@@ -577,7 +595,7 @@ function Tablero() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 8 }}
             className={cn(
-              "fixed bottom-[8.75rem] left-1/2 z-[60] flex max-w-[calc(100vw-2rem)] -translate-x-1/2 items-center gap-2 rounded-full px-4 py-2.5 text-[13px] font-semibold text-white shadow-pop lg:bottom-8",
+              "fixed bottom-24 left-1/2 z-[60] flex max-w-[calc(100vw-2rem)] -translate-x-1/2 items-center gap-2 rounded-full px-4 py-2.5 text-[13px] font-semibold text-white shadow-pop lg:bottom-8",
               aviso.error ? "bg-red" : "bg-ink",
             )}
           >
