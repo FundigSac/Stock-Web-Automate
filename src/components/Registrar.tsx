@@ -1,4 +1,4 @@
-import { Loader2, Search, TriangleAlert, UserPlus, X } from "lucide-react";
+import { Loader2, RotateCcw, Search, TriangleAlert, UserPlus, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { agruparProductos } from "../lib/derive";
 import { mensajeServidor } from "../lib/errores";
@@ -77,6 +77,8 @@ export function RegistrarDialog({
   const [foto, setFoto] = useState<FotoCapturada | null>(null);
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // X10-5: el último intento falló por algo pasajero; se puede reintentar con la misma foto.
+  const [reintentable, setReintentable] = useState(false);
   const [sinEspacio, setSinEspacio] = useState(false);
   const [hayQueRecargar, setHayQueRecargar] = useState(false);
   const [falloBorrador, setFalloBorrador] = useState<string | null>(null);
@@ -151,6 +153,7 @@ export function RegistrarDialog({
     setEsCliente(false);
     setFoto(null);
     setError(null);
+    setReintentable(false);
     setSinEspacio(false);
     setHayQueRecargar(false);
     setFalloBorrador(null);
@@ -259,9 +262,11 @@ export function RegistrarDialog({
       return;
     }
     guardando.current = true;
+    otroPedido.current = otro;
     window.clearTimeout(temporizadorBorrador.current);
     setEnviando(true);
     setError(null);
+    setReintentable(false);
     setSinEspacio(false);
     setHayQueRecargar(false);
     try {
@@ -302,7 +307,11 @@ export function RegistrarDialog({
         setError("Esta pestaña quedó en una versión anterior de la app y ya no puede guardar. Descarga la foto para no perderla y recarga la página.");
       } else {
         console.error(e);
-        setError("No se pudo guardar en este dispositivo. Inténtalo de nuevo.");
+        // X10-5: nada se pierde. El formulario y la foto siguen en pantalla, y se guardan ya como borrador
+        // (el guardado automático estaba en pausa mientras se registraba) por si la página se cierra antes de reintentar.
+        if (!borrador) void escribirBorrador();
+        setReintentable(true);
+        setError(`No se pudo guardar en este dispositivo. Lo que llenaste${foto ? " y la foto" : ""} ${foto ? "siguen" : "sigue"} aquí${borrador ? "" : ", guardado como borrador"}: vuelve a intentarlo.`);
       }
     } finally {
       guardando.current = false;
@@ -439,6 +448,11 @@ export function RegistrarDialog({
                   Recargar la página
                 </button>
               )}
+              {reintentable && (
+                <Boton type="button" variante="ink" className="mt-2.5 h-12" onClick={() => guardar(otroPedido.current)} disabled={enviando}>
+                  {enviando ? <Loader2 className="size-4 animate-spin" /> : <RotateCcw className="size-4" />} Reintentar
+                </Boton>
+              )}
             </p>
           )}
           {falloBorrador && <p className="rounded-xl bg-warn-soft px-3.5 py-2.5 text-justify text-[12.5px] font-medium text-warn">{falloBorrador}</p>}
@@ -470,7 +484,8 @@ export function RegistrarDialog({
               <span className="hidden sm:inline">Guardar y registrar otro</span>
             </Boton>
             <Boton type="submit" form="registrar-form" variante="ink" className="h-12 flex-[1.3]" disabled={!valida || enviando || confirmar}>
-              {enviando && <Loader2 className="size-4 animate-spin" />} Guardar
+              {/* X10-5: el botón dice qué hace. */}
+              {enviando && <Loader2 className="size-4 animate-spin" />} {esEntrada ? "Registrar entrada" : "Registrar entrega"}
             </Boton>
           </div>
         </div>
