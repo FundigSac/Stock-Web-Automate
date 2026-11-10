@@ -13,6 +13,7 @@ import {
 import { useMemo, useState, type ReactNode } from "react";
 import { Card, Chip, CountUp, Kicker, Vacio } from "../components/ui";
 import { MovChart } from "../components/MovChartDiferido";
+import { AvisoEspacio } from "../components/UsoAlmacen";
 import {
   agruparProductos,
   estadoDe,
@@ -104,6 +105,8 @@ export function Resumen({ todos, datos, minimo, empresa, cambiarEmpresa, abrirPr
 
   return (
     <div className="space-y-5">
+      {/* Desde el 80 % del espacio del servidor (fotos o base) */}
+      <AvisoEspacio />
       {/* Grafico + disponibilidad */}
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-3">
         <motion.div {...aparece(0)} className="xl:col-span-2">

@@ -1,6 +1,7 @@
 import { CheckCircle2, Clock3, ImageOff, Loader2, ShieldAlert, TriangleAlert, UploadCloud } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Boton, Card, Kicker, Vacio } from "../components/ui";
+import { EspacioUsado } from "../components/UsoAlmacen";
 import { entero, nombreProducto } from "../lib/format";
 import { descargarBlob, nombreEvidencia } from "../lib/foto";
 import type { ItemRespaldo } from "../lib/offline/almacen";
@@ -227,6 +228,8 @@ export function Respaldo({ r, autorizado }: { r: DatosRespaldo; /** Cuenta edito
           </p>
         </div>
       </Card>
+
+      <EspacioUsado />
 
       {r.items.length === 0 && (
         <Card>
