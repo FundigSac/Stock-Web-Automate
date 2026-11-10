@@ -26,7 +26,7 @@ import { NecesitaConexion } from "./components/NecesitaConexion";
 import { NuevoProductoDialog, NuevoTrabajadorDialog } from "./components/Nuevo";
 import { PedidosDialog } from "./components/Pedidos";
 import { AnularDialog, RegistrarDialog, type PreRegistro } from "./components/Registrar";
-import { Boton, Skeleton } from "./components/ui";
+import { Boton, BotonReintentar, Skeleton } from "./components/ui";
 import { AuthProvider, useAuth } from "./lib/auth";
 import { filtrarPorEmpresa, resumir, type GrupoProducto } from "./lib/derive";
 import { edadCopia, fechaLarga, titulo } from "./lib/format";
@@ -208,6 +208,8 @@ function Tablero() {
     abrirPedidos: () => setPedidos(true),
     pedidosPendientes: todos.pedidos.filter((p) => p.estado === "pendiente").length,
     faltanDatos: faltan,
+    errorDatos: error === "servidor",
+    reintentar: recargar,
   };
 
   // Desde la ficha de un producto: abre el registro con el producto ya elegido.
@@ -224,6 +226,9 @@ function Tablero() {
   const edad = !enLinea ? edadCopia(ultimaCarga, Date.now()) : null;
   // Hay badge en Respaldo solo cuando algo espera o necesita mirarse.
   const avisosRespaldo = respaldo.porSubir + respaldo.porRevisar;
+  // Sin el catálogo no hay nada que mostrar: un fallo así ocupa la pantalla entera, nunca como "almacén vacío".
+  const sinNada = faltan.includes("stock") || todos.stock.length === 0;
+  const cargaFichas = { faltan, errorDatos: error === "servidor", reintentar: recargar };
 
   return (
     <div className="min-h-screen lg:pl-64">
@@ -362,10 +367,11 @@ function Tablero() {
             </Boton>
           </div>
         )}
-        {error === "servidor" && todos.stock.length > 0 && (
-          <div role="alert" className="mb-5 flex items-start gap-3 rounded-2xl bg-red-soft px-4 py-3 text-[13px] text-red">
-            <AlertCircle className="mt-0.5 size-4 shrink-0" />
-            <span>El servidor no entregó los datos. Se reintentará solo.</span>
+        {error === "servidor" && !sinNada && (
+          <div role="alert" className="mb-5 flex flex-wrap items-center gap-3 rounded-2xl bg-red-soft px-4 py-3 text-[13px] text-red">
+            <AlertCircle className="size-4 shrink-0" />
+            <span className="min-w-0 flex-1">El servidor no entregó los datos. Se reintentará solo; mientras tanto ves lo último que llegó.</span>
+            <BotonReintentar alReintentar={recargar} />
           </div>
         )}
         {vista !== "respaldo" && !cargando && error !== "sin-copia" && (!enLinea || provisionales > 0) && (
@@ -382,18 +388,25 @@ function Tablero() {
             </span>
           </div>
         )}
-        {vista !== "respaldo" && !cargando && faltan.length > 0 && error !== "sin-copia" && (
+        {vista !== "respaldo" && !cargando && faltan.length > 0 && error === null && (
           <div role="alert" className="no-print mb-5 flex items-start gap-3 rounded-2xl bg-warn-soft px-4 py-3 text-justify text-[13px] font-medium text-warn">
             <AlertCircle className="mt-0.5 size-4 shrink-0" />
             <span>No todo alcanzó a descargarse antes de perder la señal. Lo que falte aparecerá cuando vuelva la conexión.</span>
           </div>
         )}
 
-        {(error === "sin-copia" || (error === "servidor" && todos.stock.length === 0)) && vista !== "respaldo" ? (
-          <div className="mx-auto max-w-md rounded-3xl border border-line-2 bg-surface px-6 py-10 text-center shadow-card">
-            <WifiOff className="mx-auto mb-3 size-6 text-warn" />
+        {(error === "sin-copia" || (error === "servidor" && sinNada)) && vista !== "respaldo" ? (
+          <div role="alert" data-falla={error === "sin-copia" ? "sin-copia" : "error"} className="mx-auto max-w-md rounded-3xl border border-line-2 bg-surface px-6 py-10 text-center shadow-card">
+            {error === "sin-copia" ? <WifiOff className="mx-auto mb-3 size-6 text-warn" /> : <AlertCircle className="mx-auto mb-3 size-6 text-red" />}
             <p className="text-sm font-semibold">{error === "sin-copia" ? "Todavía no hay datos guardados en este dispositivo" : "No se pudieron cargar los datos"}</p>
-            <p className="mt-1 text-[13px] leading-relaxed text-muted">{error === "sin-copia" ? "Ábrela una vez con conexión. Después funciona también sin señal." : "Se reintentará solo en unos segundos."}</p>
+            <p className="mt-1 text-[13px] leading-relaxed text-muted">
+              {error === "sin-copia"
+                ? "Ábrela una vez con conexión. Después funciona también sin señal."
+                : "El servidor falló: no es que el almacén esté vacío. Se reintentará solo en unos segundos."}
+            </p>
+            <div className="mt-4 flex justify-center">
+              <BotonReintentar alReintentar={recargar} />
+            </div>
           </div>
         ) : cargando ? (
           <div className="space-y-5">
@@ -515,8 +528,8 @@ function Tablero() {
         </Suspense>
         </LimiteError>
       )}
-      <VentanaProducto grupo={grupo} datos={todos} minimo={minimo} alCerrar={() => setGrupo(null)} editor={puede} alRegistrar={registrarDe} />
-      <VentanaTrabajador nombre={trabajador} datos={todos} alCerrar={() => setTrabajador(null)} />
+      <VentanaProducto grupo={grupo} datos={todos} minimo={minimo} alCerrar={() => setGrupo(null)} editor={puede} alRegistrar={registrarDe} carga={cargaFichas} />
+      <VentanaTrabajador nombre={trabajador} datos={todos} alCerrar={() => setTrabajador(null)} carga={cargaFichas} />
       {puede && (
         <RegistrarDialog
           abierto={registro}
@@ -539,7 +552,7 @@ function Tablero() {
         />
       )}
       {puede && (
-        <PedidosDialog abierto={pedidos} alCerrar={() => setPedidos(false)} pedidos={todos.pedidos} stock={todos.stock} autor={autor} setAutor={setAutor} pedirAutor={!sesion} avisar={mostrar} recargar={recargar} />
+        <PedidosDialog abierto={pedidos} alCerrar={() => setPedidos(false)} pedidos={todos.pedidos} stock={todos.stock} autor={autor} setAutor={setAutor} pedirAutor={!sesion} avisar={mostrar} recargar={recargar} falla={faltan.includes("pedidos") ? (error === "servidor" ? "error" : "incompleto") : null} />
       )}
       {puede && (
         <NuevoProductoDialog

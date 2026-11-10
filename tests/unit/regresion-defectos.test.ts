@@ -496,7 +496,9 @@ describe("lo que se ve en pantalla", () => {
   it("una copia sin movimientos no se presenta como historial vacío", () => {
     expect(camposFaltantes({ stock: [], trabajadores: [], pedidos: [], entradas: [] })).toEqual(["salidas"]);
     expect(camposFaltantes({ stock: [], trabajadores: [], pedidos: [], entradas: [], salidas: [] })).toEqual([]);
-    expect(leer("src/views/Movimientos.tsx")).toContain("no alcanzaron a descargarse");
+    // El aviso vive en FallaCarga (ui.tsx) desde X10-4; Movimientos lo usa para su historial.
+    expect(leer("src/views/Movimientos.tsx")).toContain("<FallaCarga");
+    expect(leer("src/components/ui.tsx")).toContain("no alcanzaron a descargarse");
   });
 
   it("dice la edad de la copia", () => {

@@ -279,7 +279,7 @@ export function sumaMovs(movs: Movimiento[]) {
 }
 
 /** Frases de analisis en espanol claro, segun los datos actuales. */
-export function lecturas(r: Resumen, filas: FilaEmpresa[], movs: Movimiento[]): string[] {
+export function lecturas(r: Resumen, filas: FilaEmpresa[], movs: Movimiento[], movsIncompletos = false): string[] {
   const out: string[] = [];
   if (r.articulos === 0) return ["Todavía no hay productos en el catálogo."];
   if (r.disponibles === 0) {
@@ -296,7 +296,9 @@ export function lecturas(r: Resumen, filas: FilaEmpresa[], movs: Movimiento[]): 
   if (peor && peor.pctDisponible < 100 && filas.length > 1 && r.disponibles > 0)
     out.push(`${peor.empresa} es la empresa con menos tallas con stock (${peor.pctDisponible}%).`);
   const conFecha = movs.filter((m) => !m.anulado && m.cantidad > 0);
-  if (conFecha.length === 0) out.push("Aún no hay movimientos registrados.");
+  // Si los movimientos no cargaron, no se puede afirmar que no los haya.
+  if (movsIncompletos) out.push("Los movimientos no terminaron de cargar: falta saber cuál fue el último.");
+  else if (conFecha.length === 0) out.push("Aún no hay movimientos registrados.");
   else out.push(`Último movimiento anotado: ${fechaLarga(conFecha[0].fecha)}.`);
   return out;
 }

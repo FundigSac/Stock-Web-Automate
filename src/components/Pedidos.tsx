@@ -7,7 +7,7 @@ import { supabase } from "../lib/supabase";
 import type { Pedido, StockItem } from "../lib/types";
 import { CampoAutor } from "./CampoAutor";
 import { limpiarCantidad } from "./SelectorProducto";
-import { Boton, Vacio, Ventana } from "./ui";
+import { Boton, FallaCarga, Vacio, Ventana } from "./ui";
 
 /** Lista simple de lo pedido al proveedor: llegó o se cancela, línea por línea. */
 export function PedidosDialog({
@@ -20,6 +20,7 @@ export function PedidosDialog({
   pedirAutor,
   avisar,
   recargar,
+  falla = null,
 }: {
   abierto: boolean;
   alCerrar: () => void;
@@ -30,6 +31,8 @@ export function PedidosDialog({
   pedirAutor: boolean;
   avisar: (texto: string, error?: boolean) => void;
   recargar: () => void;
+  /** Los pedidos no cargaron: no se dice "no hay pedidos". */
+  falla?: "error" | "incompleto" | null;
 }) {
   const enLinea = useEnLinea();
   const [cantidades, setCantidades] = useState<Record<number, string>>({});
@@ -91,7 +94,9 @@ export function PedidosDialog({
             {error}
           </p>
         )}
-        {pendientes.length === 0 ? (
+        {falla ? (
+          <FallaCarga tipo={falla} que="Los pedidos" reintentar={recargar} />
+        ) : pendientes.length === 0 ? (
           <Vacio icono={<PackageCheck className="size-5" />} titulo="No hay pedidos pendientes" texto="Cuando pidas algo al proveedor aparecerá aquí hasta que llegue." />
         ) : (
           <ul className="divide-y divide-line-2 overflow-hidden rounded-2xl border border-line">

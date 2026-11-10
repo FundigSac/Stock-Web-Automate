@@ -6,10 +6,11 @@ import { Simulado } from "./simulado";
 const enVivo = (page: Page) => page.getByRole("status").filter({ hasText: /En vivo|Conectado/ }).filter({ visible: true });
 const irA = (page: Page, nombre: RegExp) => page.getByRole("navigation", { name: "Secciones" }).filter({ visible: true }).getByRole("button", { name: nombre }).click();
 
+/** Abre la app con datos simulados. Con un fallo del servidor no hay "En vivo": basta con que se vea el Resumen. */
 async function abrir(page: Page, sb = new Simulado()) {
   await sb.conectar(page.context());
   await page.goto("/");
-  await expect(enVivo(page)).toBeVisible();
+  await expect(sb.fallan.size ? page.getByText("Unidades en almacén") : enVivo(page)).toBeVisible();
   return sb;
 }
 
@@ -87,5 +88,67 @@ test.describe("X12-4 cantidades con signo y flecha, anuladas marcadas", () => {
     await expect(ficha.locator('[data-cantidad="salida"]')).toHaveCount(2);
     await expect(ficha.locator('[data-cantidad="salida"]:not([data-anulado])')).toContainText("−3");
     await expect(ficha.locator("[data-marca-anulado]")).toHaveCount(1);
+  });
+});
+
+test.describe("X10-4 un fallo de carga nunca se muestra como 'no hay datos'", () => {
+  test("si fallan los movimientos se dice y se puede reintentar", async ({ page }) => {
+    const sb = new Simulado();
+    sb.fallan.add("salidas");
+    await abrir(page, sb);
+    const aviso = page.getByRole("alert").filter({ hasText: "El servidor no entregó los datos" });
+    await expect(aviso).toBeVisible();
+    // Resumen: ni el gráfico ni los últimos movimientos dicen que no hay movimientos.
+    await expect(page.locator('[data-falla="error"]')).toHaveCount(2);
+    await expect(page.getByText("Sin movimientos todavía")).toHaveCount(0);
+    await expect(page.getByText("Aún no hay movimientos registrados.")).toHaveCount(0);
+    await irA(page, /^Movimientos/);
+    await expect(page.locator('main [data-falla="error"]').filter({ hasText: "Los movimientos no alcanzaron a descargarse porque el servidor falló" })).toBeVisible();
+    await expect(page.getByText("Sin movimientos para mostrar")).toHaveCount(0);
+
+    sb.fallan.clear();
+    await aviso.getByRole("button", { name: "Reintentar" }).click();
+    await expect(aviso).toBeHidden();
+    await expect(page.locator("[data-falla]")).toHaveCount(0);
+    await expect(page.locator('main [data-cantidad="salida"]').first()).toBeVisible();
+  });
+
+  test("si no carga nada se ve el error con reintento, no un almacén vacío", async ({ page }) => {
+    const sb = new Simulado();
+    sb.fallan = new Set(["stock_items", "entradas", "salidas", "trabajadores", "ajustes", "pedidos"]);
+    await sb.conectar(page.context());
+    await page.goto("/");
+    const error = page.locator('[data-falla="error"]');
+    await expect(error).toContainText("No se pudieron cargar los datos");
+    await expect(error).toContainText("no es que el almacén esté vacío");
+    await expect(page.getByText(/No hay tallas|Todavía no hay productos/)).toHaveCount(0);
+    sb.fallan.clear();
+    await error.getByRole("button", { name: "Reintentar" }).click();
+    await expect(enVivo(page)).toBeVisible();
+    await expect(page.getByText("Unidades en almacén")).toBeVisible();
+  });
+
+  test("si de verdad no hay movimientos se dice que no hay", async ({ page }) => {
+    const sb = new Simulado();
+    sb.vacias = new Set(["entradas", "salidas"]);
+    await abrir(page, sb);
+    await expect(page.getByText("Sin movimientos todavía")).toBeVisible();
+    await irA(page, /^Movimientos/);
+    await expect(page.getByText("Sin movimientos para mostrar")).toBeVisible();
+    await expect(page.locator("[data-falla]")).toHaveCount(0);
+  });
+
+  test("la ficha del trabajador no dice 'sin entregas' si no cargaron", async ({ page }) => {
+    const sb = new Simulado();
+    sb.fallan.add("salidas");
+    await abrir(page, sb);
+    await irA(page, /^Trabajadores/);
+    await page.getByRole("button", { name: /Diego Soto/ }).first().click();
+    const ficha = page.getByRole("dialog");
+    await expect(ficha.locator('[data-falla="error"]')).toContainText("Las entregas no alcanzaron a descargarse");
+    await expect(ficha.getByText("todavía no tiene entregas")).toHaveCount(0);
+    sb.fallan.clear();
+    await ficha.getByRole("button", { name: "Reintentar" }).click();
+    await expect(ficha.locator('[data-cantidad="salida"]').first()).toBeVisible();
   });
 });

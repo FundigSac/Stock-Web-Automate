@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { agruparProductos, entregasDe, estadoProducto, GRAVEDAD, signoMovimiento, textoEstadoProducto } from "../../src/lib/derive";
+import { estadoCarga } from "../../src/lib/carga";
+import { agruparProductos, entregasDe, estadoProducto, GRAVEDAD, lecturas, resumir, signoMovimiento, textoEstadoProducto } from "../../src/lib/derive";
+import { camposFaltantes, type Campo } from "../../src/lib/useLiveData";
 import { entero } from "../../src/lib/format";
 import type { StockItem } from "../../src/lib/types";
 
@@ -66,5 +68,37 @@ describe("X12-4: los movimientos llevan signo y sentido", () => {
     const salidas = [s(1, false), s(2, true)];
     expect(entregasDe(salidas, "DIEGO").map((x) => x.id)).toEqual([1]);
     expect(entregasDe(salidas, "DIEGO", true).map((x) => x.id).sort()).toEqual([1, 2]);
+  });
+});
+
+describe("X10-4: cargando, error con reintento y vacío de verdad son cosas distintas", () => {
+  const base = { cargando: false, faltan: [] as Campo[], campos: ["salidas"] as Campo[], errorServidor: false, hayFilas: true };
+
+  it("mientras carga no se dice nada de los datos", () => {
+    expect(estadoCarga({ ...base, cargando: true, faltan: ["salidas"], hayFilas: false })).toBe("cargando");
+  });
+
+  it("una tabla que no llegó es error si el servidor falló e incompleta si faltó la señal", () => {
+    expect(estadoCarga({ ...base, faltan: ["salidas"], errorServidor: true, hayFilas: false })).toBe("error");
+    expect(estadoCarga({ ...base, faltan: ["salidas"], hayFilas: false })).toBe("incompleto");
+  });
+
+  it("solo es vacío cuando la tabla llegó y no trae filas", () => {
+    expect(estadoCarga({ ...base, hayFilas: false })).toBe("vacio");
+    expect(estadoCarga({ ...base, faltan: ["pedidos"], errorServidor: true, hayFilas: false })).toBe("vacio");
+    expect(estadoCarga(base)).toBe("listo");
+  });
+
+  it("la lectura rápida no afirma que no hay movimientos si no cargaron", () => {
+    const r = resumir([talla("P-S", 3)], 2);
+    expect(lecturas(r, [], [])).toContain("Aún no hay movimientos registrados.");
+    const incompleto = lecturas(r, [], [], true);
+    expect(incompleto).not.toContain("Aún no hay movimientos registrados.");
+    expect(incompleto.join(" ")).toMatch(/no terminaron de cargar/);
+  });
+
+  it("camposFaltantes distingue una tabla vacía de una que no llegó", () => {
+    expect(camposFaltantes({ stock: [], entradas: [], salidas: [], trabajadores: [], pedidos: [] })).toEqual([]);
+    expect(camposFaltantes({ stock: [], trabajadores: [] })).toEqual(["entradas", "salidas", "pedidos"]);
   });
 });

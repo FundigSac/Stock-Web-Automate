@@ -1,12 +1,15 @@
 import { motion } from "framer-motion";
 import { ChevronRight, Shirt, UserCheck, UserPlus, Users } from "lucide-react";
 import { useMemo, useState } from "react";
-import { Card, Chip, CountUp, Kicker, Tabla, Vacio, td, th } from "../components/ui";
+import { Card, Chip, CountUp, FallaCarga, Kicker, Tabla, Vacio, td, th } from "../components/ui";
+import { estadoCarga } from "../lib/carga";
 import { entero, fechaLarga, iniciales, titulo } from "../lib/format";
 import { cn } from "../lib/utils";
 import type { VistaProps } from "./tipos";
 
-export function Trabajadores({ todos, abrirTrabajador, editor, abrirNuevoTrabajador }: VistaProps) {
+export function Trabajadores({ todos, abrirTrabajador, editor, abrirNuevoTrabajador, faltanDatos, errorDatos }: VistaProps) {
+  const carga = estadoCarga({ cargando: false, faltan: faltanDatos, campos: ["trabajadores"], errorServidor: errorDatos, hayFilas: todos.trabajadores.length > 0 });
+  const falla = carga === "error" || carga === "incompleto" ? carga : null;
   const [area, setArea] = useState("TODAS");
   const lista = todos.trabajadores;
 
@@ -63,6 +66,8 @@ export function Trabajadores({ todos, abrirTrabajador, editor, abrirNuevoTrabaja
           </span>
         </button>
       )}
+      {falla && <FallaCarga tipo={falla} que="Los datos del personal" />}
+      {!falla && (
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-3">
         {kpis.map((k) => (
           <Card key={k.etiqueta} className="p-5">
@@ -77,7 +82,9 @@ export function Trabajadores({ todos, abrirTrabajador, editor, abrirNuevoTrabaja
           </Card>
         ))}
       </div>
+      )}
 
+      {!falla && (
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-3">
         <Card className="p-6 order-2">
           <Kicker>Por área</Kicker>
@@ -179,6 +186,7 @@ export function Trabajadores({ todos, abrirTrabajador, editor, abrirNuevoTrabaja
           </Card>
         </div>
       </div>
+      )}
     </div>
   );
 }

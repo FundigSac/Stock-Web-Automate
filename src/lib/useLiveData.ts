@@ -154,6 +154,9 @@ export function useLiveData(activo: boolean) {
           console.error("[datos]", mensaje);
           setError("servidor");
         }
+        // Lo que no llegó ni del servidor ni de la copia queda marcado: la pantalla no debe decir "no hay" de algo que no cargó.
+        await lecturaCopia.current;
+        setFaltan(camposFaltantes(enMemoria.current));
         return false;
       } finally {
         primera.current = false;

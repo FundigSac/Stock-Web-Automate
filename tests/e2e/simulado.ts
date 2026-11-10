@@ -80,6 +80,8 @@ export const AJUSTES = { stock_minimo: 2, registro_abierto: true, reporte_inicio
 export class Simulado {
   /** Tablas que responden con error 500. */
   fallan = new Set<string>();
+  /** Tablas que responden vacías: de verdad no hay filas. */
+  vacias = new Set<string>();
   /** Mientras no se resuelva, las lecturas de datos quedan esperando (para ver la carga). */
   espera: Promise<void> | null = null;
   lecturas = 0;
@@ -104,7 +106,7 @@ export class Simulado {
       this.lecturas++;
       if (this.espera) await this.espera;
       if (this.fallan.has(tabla)) return this.json(route, { message: "boom" }, 500);
-      return this.json(route, datos[tabla]);
+      return this.json(route, this.vacias.has(tabla) ? [] : datos[tabla]);
     }
     return this.json(route, []);
   }

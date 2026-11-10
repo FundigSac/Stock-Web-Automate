@@ -5,7 +5,9 @@ import { entero, etiquetaTalla, fechaLarga, nombreProducto, nombreTallaEn, parti
 import type { Datos } from "../lib/types";
 import { cn } from "../lib/utils";
 import { MiniFoto, VisorFoto } from "./Evidencia";
-import { CantidadMov, EstadoBadge, Kicker, MarcaAnulado, Tabla, Ventana, td, th } from "./ui";
+import { CantidadMov, EstadoBadge, FallaCarga, Kicker, MarcaAnulado, Tabla, Ventana, td, th } from "./ui";
+import { estadoCarga } from "../lib/carga";
+import type { Campo } from "../lib/useLiveData";
 
 export function VentanaProducto({
   grupo,
@@ -14,6 +16,7 @@ export function VentanaProducto({
   alCerrar,
   editor,
   alRegistrar,
+  carga,
 }: {
   grupo: GrupoProducto | null;
   datos: Datos;
@@ -21,7 +24,9 @@ export function VentanaProducto({
   alCerrar: () => void;
   editor: boolean;
   alRegistrar: (tipo: "entrada" | "salida", g: GrupoProducto) => void;
+  carga: Carga;
 }) {
+  const falla = fallaDe(carga, ["entradas", "salidas"]);
   const [foto, setFoto] = useState<string | null>(null);
   const movs = useMemo(() => {
     if (!grupo) return [];
@@ -104,7 +109,9 @@ export function VentanaProducto({
       </div>
 
       <Kicker className="mt-6">Historial de este producto</Kicker>
-      {movs.length === 0 ? (
+      {falla ? (
+        <FallaCarga tipo={falla} que="Los movimientos" reintentar={carga.reintentar} className="mt-2" />
+      ) : movs.length === 0 ? (
         <p className="mt-2 rounded-2xl bg-ground px-4 py-5 text-center text-[13px] text-muted">
           Todavía no hay entradas ni salidas de este producto.
         </p>
@@ -139,11 +146,15 @@ export function VentanaTrabajador({
   nombre,
   datos,
   alCerrar,
+  carga,
 }: {
   nombre: string | null;
   datos: Datos;
   alCerrar: () => void;
+  /** Qué tablas no cargaron, para no decir "no tiene entregas" de algo que no llegó. */
+  carga: Carga;
 }) {
+  const falla = fallaDe(carga, ["salidas"]);
   const [foto, setFoto] = useState<string | null>(null);
   const t = datos.trabajadores.find((x) => x.trabajador === nombre) ?? null;
   const entregas = useMemo(() => entregasDe(datos.salidas, nombre, true), [datos.salidas, nombre]);
@@ -162,7 +173,9 @@ export function VentanaTrabajador({
       }
     >
       <Kicker>Entregas registradas</Kicker>
-      {entregas.length === 0 ? (
+      {falla ? (
+        <FallaCarga tipo={falla} que="Las entregas" reintentar={carga.reintentar} className="mt-2" />
+      ) : entregas.length === 0 ? (
         <p className="mt-2 rounded-2xl bg-ground px-4 py-5 text-center text-[13px] text-muted">
           Esta persona todavía no tiene entregas registradas.
         </p>
@@ -185,4 +198,12 @@ export function VentanaTrabajador({
       <VisorFoto ruta={foto} titulo="Evidencia de entrega" detalle={t ? titulo(t.trabajador) : undefined} alCerrar={() => setFoto(null)} />
     </Ventana>
   );
+}
+
+/** Lo que una ficha necesita saber de la carga de datos. */
+export type Carga = { faltan: Campo[]; errorDatos: boolean; reintentar: () => Promise<unknown> };
+
+function fallaDe(c: Carga, campos: Campo[]): "error" | "incompleto" | null {
+  const e = estadoCarga({ cargando: false, faltan: c.faltan, campos, errorServidor: c.errorDatos, hayFilas: true });
+  return e === "error" || e === "incompleto" ? e : null;
 }

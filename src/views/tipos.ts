@@ -30,4 +30,8 @@ export type VistaProps = {
   pedidosPendientes: number;
   /** Tablas que no alcanzaron a descargarse antes de perder la señal. */
   faltanDatos: Campo[];
+  /** El servidor respondió con error (no es falta de señal). */
+  errorDatos: boolean;
+  /** Vuelve a leer todo del servidor. */
+  reintentar: () => Promise<unknown>;
 };

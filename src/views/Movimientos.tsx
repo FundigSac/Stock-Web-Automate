@@ -2,7 +2,7 @@ import { Activity, ArrowDown, ArrowUp, Ban, PackageMinus, PackagePlus, Plus, Sea
 import { useMemo, useState } from "react";
 import { MovChart } from "../components/MovChartDiferido";
 import { MiniFoto, VisorFoto } from "../components/Evidencia";
-import { Boton, CantidadMov, Card, Chip, Kicker, MarcaAnulado, Vacio } from "../components/ui";
+import { Boton, CantidadMov, Card, Chip, FallaCarga, Kicker, MarcaAnulado, Vacio } from "../components/ui";
 import { momentoMovimiento, movimientosDe, serieDiaria, sumaMovs } from "../lib/derive";
 import { entero, etiquetaTalla, fechaLarga, hoyISO, norm, nombreProducto, partirMovimiento, sumarDias, titulo } from "../lib/format";
 import type { Movimiento } from "../lib/types";
@@ -32,7 +32,7 @@ function encabezadoDia(iso: string): string {
 
 type Fila = { clave: string; mov: Movimiento };
 
-export function Movimientos({ todos, datos, editor, pedirAnular, abrirRegistro, faltanDatos }: VistaProps) {
+export function Movimientos({ todos, datos, editor, pedirAnular, abrirRegistro, faltanDatos, errorDatos }: VistaProps) {
   const historialIncompleto = faltanDatos.includes("entradas") || faltanDatos.includes("salidas");
   const [tipo, setTipo] = useState<Tipo>("todos");
   const [dias, setDias] = useState(0);
@@ -169,11 +169,7 @@ export function Movimientos({ todos, datos, editor, pedirAnular, abrirRegistro, 
         </div>
       </Card>
 
-      {historialIncompleto && (
-        <p role="alert" className="rounded-2xl bg-warn-soft px-4 py-3 text-justify text-[13px] font-medium text-warn">
-          Los movimientos no alcanzaron a descargarse antes de perder la señal, así que esta lista está incompleta. Se completa sola cuando vuelva la conexión.
-        </p>
-      )}
+      {historialIncompleto && <FallaCarga tipo={errorDatos ? "error" : "incompleto"} que="Los movimientos" />}
 
       {historialIncompleto && dibujados.length === 0 ? null : dibujados.length === 0 ? (
         <Card>

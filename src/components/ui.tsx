@@ -1,6 +1,6 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import { animate } from "framer-motion";
-import { AlertOctagon, AlertTriangle, ArrowDown, ArrowUp, Ban, CheckCircle2, CircleSlash, X, type LucideIcon } from "lucide-react";
+import { AlertOctagon, AlertTriangle, ArrowDown, ArrowUp, Ban, CheckCircle2, CircleSlash, RefreshCw, X, type LucideIcon } from "lucide-react";
 import { useEffect, useId, useRef, useState, type ButtonHTMLAttributes, type HTMLAttributes, type ReactNode } from "react";
 import { ESTADO_TEXTO, signoMovimiento } from "../lib/derive";
 import { entero } from "../lib/format";
@@ -149,6 +149,62 @@ export function Vacio({ icono, titulo, texto }: { icono: ReactNode; titulo: stri
       <p className="text-sm font-semibold text-ink">{titulo}</p>
       <p className="mt-1 max-w-sm text-[13px] leading-relaxed text-muted">{texto}</p>
     </div>
+  );
+}
+
+/**
+ * Una parte que no cargó. Nunca se muestra como vacía: dice qué falta y, si hay con qué, ofrece reintentar.
+ * `incompleto` es la falta de señal (se completa sola); `error` es un fallo del servidor.
+ */
+export function FallaCarga({
+  tipo,
+  que,
+  reintentar,
+  breve = false,
+  className,
+}: {
+  tipo: "error" | "incompleto";
+  /** "Los movimientos", "Los datos del personal"… (en plural). */
+  que: string;
+  reintentar?: () => Promise<unknown> | void;
+  /** Para tarjetas pequeñas: una frase corta. */
+  breve?: boolean;
+  className?: string;
+}) {
+  const texto = breve
+    ? tipo === "error"
+      ? `${que} no cargaron porque el servidor falló; no es que no haya.`
+      : `${que} no cargaron antes de perder la señal; no es que no haya.`
+    : tipo === "error"
+      ? `${que} no alcanzaron a descargarse porque el servidor falló. Lo que ves puede estar incompleto: no es que no haya datos.`
+      : `${que} no alcanzaron a descargarse antes de perder la señal, así que esta parte está incompleta. Se completa sola cuando vuelva la conexión.`;
+  return (
+    <div role="alert" data-falla={tipo} className={cn("flex flex-wrap items-center gap-3 rounded-2xl px-4 py-3 text-[13px] font-medium", tipo === "error" ? "bg-red-soft text-red" : "bg-warn-soft text-warn", className)}>
+      <AlertTriangle className="size-4 shrink-0" aria-hidden />
+      <p className="min-w-0 flex-1 text-justify">{texto}</p>
+      {reintentar && tipo === "error" && <BotonReintentar alReintentar={reintentar} />}
+    </div>
+  );
+}
+
+/** Vuelve a pedir los datos y muestra que está en ello. */
+export function BotonReintentar({ alReintentar, className }: { alReintentar: () => Promise<unknown> | void; className?: string }) {
+  const [probando, setProbando] = useState(false);
+  return (
+    <Boton
+      className={cn("h-9", className)}
+      disabled={probando}
+      onClick={async () => {
+        setProbando(true);
+        try {
+          await alReintentar();
+        } finally {
+          setProbando(false);
+        }
+      }}
+    >
+      <RefreshCw className={cn("size-3.5", probando && "animate-spin motion-reduce:animate-none")} aria-hidden /> {probando ? "Reintentando…" : "Reintentar"}
+    </Boton>
   );
 }
 

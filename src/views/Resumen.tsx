@@ -11,7 +11,8 @@ import {
   Sparkles,
 } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
-import { CantidadMov, Card, Chip, CountUp, EstadoBadge, Kicker, Vacio } from "../components/ui";
+import { CantidadMov, Card, Chip, CountUp, EstadoBadge, FallaCarga, Kicker, Vacio } from "../components/ui";
+import { estadoCarga } from "../lib/carga";
 import { MovChart } from "../components/MovChartDiferido";
 import { AvisoEspacio } from "../components/UsoAlmacen";
 import {
@@ -35,13 +36,16 @@ const aparece = (i: number) => ({
   transition: { duration: 0.5, delay: i * 0.06, ease: [0.16, 1, 0.3, 1] as const },
 });
 
-export function Resumen({ todos, datos, minimo, empresa, cambiarEmpresa, abrirProducto, irA }: VistaProps) {
+export function Resumen({ todos, datos, minimo, empresa, cambiarEmpresa, abrirProducto, irA, faltanDatos, errorDatos }: VistaProps) {
+  // Una tabla que no cargó no es una tabla vacía (X10-4).
+  const cargaMovs = estadoCarga({ cargando: false, faltan: faltanDatos, campos: ["entradas", "salidas"], errorServidor: errorDatos, hayFilas: true });
+  const fallaMovs = cargaMovs === "error" || cargaMovs === "incompleto" ? cargaMovs : null;
   const r = useMemo(() => resumir(datos.stock, minimo), [datos.stock, minimo]);
   const filasEmpresa = useMemo(() => porEmpresa(todos.stock, minimo), [todos.stock, minimo]);
   const movs = useMemo(() => movimientosDe(datos), [datos]);
   const serie = useMemo(() => serieDiaria(movs, 30), [movs]);
   const grupos = useMemo(() => agruparProductos(datos.stock, minimo), [datos.stock, minimo]);
-  const frases = useMemo(() => lecturas(r, empresa === "TODAS" ? filasEmpresa : [], movs), [r, empresa, filasEmpresa, movs]);
+  const frases = useMemo(() => lecturas(r, empresa === "TODAS" ? filasEmpresa : [], movs, fallaMovs !== null), [r, empresa, filasEmpresa, movs, fallaMovs]);
 
   const totEntradas = serie.reduce((a, d) => a + d.entradas, 0);
   const totSalidas = serie.reduce((a, d) => a + d.salidas, 0);
@@ -128,7 +132,9 @@ export function Resumen({ todos, datos, minimo, empresa, cambiarEmpresa, abrirPr
               </div>
             </div>
             <div className="mt-4">
-              {hayMovs ? (
+              {fallaMovs ? (
+                <FallaCarga tipo={fallaMovs} que="Los movimientos" breve />
+              ) : hayMovs ? (
                 <MovChart serie={serie} />
               ) : (
                 <div className="grid h-[260px] place-items-center rounded-2xl border border-dashed border-line">
@@ -324,7 +330,9 @@ export function Resumen({ todos, datos, minimo, empresa, cambiarEmpresa, abrirPr
           <Card className="h-full p-6">
             <Kicker>Actividad</Kicker>
             <h2 className="display mt-1 text-lg font-semibold">Últimos movimientos</h2>
-            {ultimos.length === 0 ? (
+            {fallaMovs ? (
+              <FallaCarga tipo={fallaMovs} que="Los movimientos" breve className="mt-3" />
+            ) : ultimos.length === 0 ? (
               <Vacio
                 icono={<Activity className="size-5" />}
                 titulo="Sin movimientos todavía"
