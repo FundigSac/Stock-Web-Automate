@@ -75,6 +75,14 @@ const salida = (extra: object) => ({ id: 1, client_id: null, fecha: "2026-11-05"
 
 const estado = (page: Page, texto: string | RegExp) => page.getByRole("status").filter({ hasText: texto }).filter({ visible: true });
 const irA = (page: Page, nombre: RegExp) => page.getByRole("navigation", { name: "Secciones" }).filter({ visible: true }).getByRole("button", { name: nombre }).click();
+/** La isla del reporte semanal sale de la campana. Puede abrirse sola al cargar: se toca hasta que quede abierta. */
+async function abrirReporte(page: Page) {
+  const campana = page.getByRole("button", { name: /^Recordatorio del reporte semanal/ });
+  await expect(async () => {
+    if ((await campana.getAttribute("aria-expanded")) !== "true") await campana.click();
+    await expect(campana).toHaveAttribute("aria-expanded", "true", { timeout: 1000 });
+  }).toPass({ timeout: 10_000 });
+}
 const SESION = { id: "u1", email: "ana@fundigsac.pe", editor: true };
 
 async function conSesion(context: BrowserContext) {
@@ -115,7 +123,7 @@ test("cerrar sesión con registros sin subir pide confirmación", async ({ conte
   await expect(v).toBeHidden();
   await expect(estado(page, "1 por subir")).toBeVisible();
 
-  await page.getByRole("button", { name: /ana/i, expanded: false }).click();
+  await page.getByRole("button", { name: /^AN?[ ]*ana/i, expanded: false }).click();
   await page.getByRole("menuitem", { name: "Cerrar sesión" }).click();
   await expect(page.getByRole("heading", { name: "Tienes registros sin subir" })).toBeVisible();
   await page.getByRole("button", { name: "Seguir con la sesión" }).click();
@@ -187,7 +195,8 @@ test("con una tabla sin cargar el informe no se genera ni se marca hecho", async
   await page.goto("/");
   await expect(page.getByText("El servidor no entregó los datos")).toBeVisible();
 
-  await page.getByRole("button", { name: "Descargar reporte" }).click();
+  await abrirReporte(page);
+  await page.getByRole("button", { name: /^Descargar reporte/ }).click();
   await expect(page.getByText(/no entregó todos los datos/)).toBeVisible();
   expect(sb.marcados).toBe(0);
 
@@ -203,7 +212,8 @@ test("el reporte semanal con fotos que no cargan no cierra la semana", async ({ 
   await page.goto("/");
   await expect(estado(page, /En vivo|Conectado/)).toBeVisible();
 
-  await page.getByRole("button", { name: "Descargar reporte" }).click();
+  await abrirReporte(page);
+  await page.getByRole("button", { name: /^Descargar reporte/ }).click();
   await expect(page.getByTestId("aviso-reporte")).toContainText("fotos no cargaron", { timeout: 30_000 });
   expect(sb.marcados).toBe(0);
   await expect(page.getByRole("button", { name: "Marcar como hecho" })).toBeVisible();
@@ -365,7 +375,7 @@ async function sesionUnaVez(context: BrowserContext, expirada: boolean) {
 }
 
 const tokenGuardado = (page: Page) => page.evaluate(() => localStorage.getItem("sb-127-auth-token"));
-const botonCuenta = (page: Page) => page.getByRole("button", { name: /ana/i, expanded: false });
+const botonCuenta = (page: Page) => page.getByRole("button", { name: /^AN?[ ]*ana/i, expanded: false });
 
 async function salirDelMenu(page: Page) {
   await botonCuenta(page).click();
@@ -523,7 +533,8 @@ test("el reporte marca hasta la última fila incluida, aunque se marque horas de
   await page.goto("/");
   await expect(estado(page, /En vivo|Conectado/)).toBeVisible();
 
-  await page.getByRole("button", { name: "Descargar reporte" }).click();
+  await abrirReporte(page);
+  await page.getByRole("button", { name: /^Descargar reporte/ }).click();
   await expect(page.getByTestId("aviso-reporte")).toContainText("fotos no cargaron", { timeout: 30_000 });
 
   // Llega otra fila después de armar el PDF: no salió en él y no puede quedar cubierta por el corte.
@@ -540,7 +551,8 @@ test("el reporte sin fotos pendientes se marca con su corte", async ({ context, 
   await sb.conectar(context);
   await page.goto("/");
   await expect(estado(page, /En vivo|Conectado/)).toBeVisible();
-  await page.getByRole("button", { name: "Descargar reporte" }).click();
+  await abrirReporte(page);
+  await page.getByRole("button", { name: /^Descargar reporte/ }).click();
   await expect.poll(() => sb.cortes, { timeout: 30_000 }).toEqual([ultima]);
 });
 
