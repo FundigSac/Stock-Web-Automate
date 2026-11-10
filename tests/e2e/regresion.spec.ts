@@ -22,6 +22,10 @@ class Falso {
   logoutCuelga = false;
   tokens = 0;
   tokenBloqueado = false;
+  /** Lo que devuelve la RPC uso_almacen. */
+  uso: unknown = { base_bytes: 42 * 1048576, base_limite: 524288000, fotos_bytes: 120 * 1048576, fotos_limite: 1073741824, fotos: 800 };
+  usoLlamadas = 0;
+  usoFalla = false;
 
   async conectar(context: BrowserContext) {
     await context.route(`${SUPABASE}/**`, (route) => this.responder(route));
@@ -35,6 +39,10 @@ class Falso {
     const req = route.request();
     if (this.sinRed) return route.abort("internetdisconnected");
     if (req.method() === "OPTIONS") return route.fulfill({ status: 200, headers: cors });
+    if (new URL(req.url()).pathname === "/rest/v1/rpc/uso_almacen") {
+      this.usoLlamadas++;
+      return this.usoFalla ? this.json(route, { message: "boom" }, 500) : this.json(route, this.uso);
+    }
     const ruta = new URL(req.url()).pathname;
     if (ruta === "/rest/v1/rpc/is_editor") return this.json(route, true);
     if (ruta === "/auth/v1/logout") {
@@ -638,3 +646,71 @@ for (const [ancho, alto] of [[360, 800], [375, 812], [390, 844], [768, 1024], [1
     }
   });
 }
+
+// Espacio del servidor (RPC uso_almacen): tarjeta en Respaldo y aviso en Resumen desde el 80 %.
+async function serviceWorkerListo(page: Page) {
+  await page.evaluate(async () => {
+    await navigator.serviceWorker.ready;
+    if (!navigator.serviceWorker.controller) {
+      await new Promise<void>((ok) => navigator.serviceWorker.addEventListener("controllerchange", () => ok(), { once: true }));
+    }
+  });
+}
+
+test("Respaldo muestra el espacio usado desde la RPC simulada y no avisa por debajo del 80 %", async ({ context, page }) => {
+  const sb = new Falso();
+  await sb.conectar(context);
+  await page.goto("/");
+  await expect(estado(page, /En vivo|Conectado/)).toBeVisible();
+  await expect.poll(() => sb.usoLlamadas).toBeGreaterThan(0);
+  await expect(page.getByText(/Queda poco espacio/)).toHaveCount(0);
+  await irA(page, /^Respaldo/);
+  const tarjeta = page.getByRole("region", { name: "Espacio usado" });
+  await expect(tarjeta.getByText("Fotos: 120 MB de 1 GB")).toBeVisible();
+  await expect(tarjeta.getByText("Base: 42 MB de 500 MB")).toBeVisible();
+  await expect(page.getByText(/Queda poco espacio/)).toHaveCount(0);
+});
+
+test("desde el 80 % se ve un aviso del espacio en Resumen y en Respaldo", async ({ context, page }) => {
+  const sb = new Falso();
+  sb.uso = { base_bytes: 450 * 1048576, base_limite: 524288000, fotos_bytes: 900 * 1048576, fotos_limite: 1073741824, fotos: 5000 };
+  await sb.conectar(context);
+  await page.goto("/");
+  await expect(estado(page, /En vivo|Conectado/)).toBeVisible();
+  // Resumen es la pantalla de inicio: el aviso se ve sin buscarlo.
+  await expect(page.getByRole("alert").filter({ hasText: "Queda poco espacio" })).toContainText("las fotos ocupan el 88 % y la base ocupa el 90 %");
+  await irA(page, /^Respaldo/);
+  await expect(page.getByRole("region", { name: "Espacio usado" }).getByRole("alert")).toContainText("las fotos ocupan el 88 % y la base ocupa el 90 %");
+});
+
+test("sin red el espacio muestra el último valor conocido", async ({ context, page }) => {
+  const sb = new Falso();
+  await sb.conectar(context);
+  await page.goto("/");
+  await expect(estado(page, /En vivo|Conectado/)).toBeVisible();
+  await serviceWorkerListo(page);
+  await irA(page, /^Respaldo/);
+  await expect(page.getByText("Fotos: 120 MB de 1 GB")).toBeVisible();
+  const antes = sb.usoLlamadas;
+
+  sb.sinRed = true;
+  await context.setOffline(true);
+  await page.reload();
+  await expect(estado(page, /^Sin conexión/)).toBeVisible();
+  await irA(page, /^Respaldo/);
+  await expect(page.getByText("Fotos: 120 MB de 1 GB")).toBeVisible();
+  expect(sb.usoLlamadas).toBe(antes);
+});
+
+test("si nunca se pudo leer el espacio no se muestra nada", async ({ context, page }) => {
+  const sb = new Falso();
+  sb.usoFalla = true;
+  await sb.conectar(context);
+  await page.goto("/");
+  await expect(estado(page, /En vivo|Conectado/)).toBeVisible();
+  await expect.poll(() => sb.usoLlamadas).toBeGreaterThan(0);
+  await expect(page.getByText(/Queda poco espacio/)).toHaveCount(0);
+  await irA(page, /^Respaldo/);
+  await expect(page.getByText("Este dispositivo", { exact: true })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Espacio usado" })).toHaveCount(0);
+});
