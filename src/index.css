@@ -50,6 +50,8 @@ body {
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+  /* B9-1: cifras de ancho fijo en toda la app (cantidades, KPI, tablas): las columnas alinean y los contadores no bailan. */
+  font-variant-numeric: tabular-nums;
 }
 
 .num {

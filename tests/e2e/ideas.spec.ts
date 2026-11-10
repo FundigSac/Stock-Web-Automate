@@ -344,3 +344,23 @@ test.describe("B9-3 objetivos táctiles de 48 px en el celular", () => {
     expect(pdf!.height).toBe(40);
   });
 });
+
+test.describe("B9-1 cifras tabulares", () => {
+  const tabular = (l: Locator) => l.evaluate((e) => getComputedStyle(e).fontVariantNumeric);
+
+  test("KPI, cantidades y tablas usan tabular-nums", async ({ page }) => {
+    await abrir(page);
+    const kpi = page.getByRole("button", { name: /Unidades en almacén/ }).locator(".display");
+    expect(await tabular(kpi)).toBe("tabular-nums");
+    await irA(page, /^Stock/);
+    expect(await tabular(page.getByRole("button", { name: /Polo Azul/ }).first().locator("p.display"))).toBe("tabular-nums");
+    await page.getByRole("button", { name: /^Lista/ }).click();
+    const celdas = page.locator("main table td");
+    expect(await celdas.count()).toBeGreaterThan(10);
+    for (const i of [0, 3, 5]) expect(await tabular(celdas.nth(i))).toBe("tabular-nums");
+    await irA(page, /^Movimientos/);
+    expect(await tabular(page.locator('main [data-cantidad="entrada"]').first())).toBe("tabular-nums");
+    // Hasta el texto corrido: una fecha en una lista no cambia de ancho al pasar de 1 a 8.
+    expect(await tabular(page.locator("main h3").first())).toBe("tabular-nums");
+  });
+});

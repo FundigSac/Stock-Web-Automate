@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { estadoCarga } from "../../src/lib/carga";
 import { desplazamientoPildora } from "../../src/lib/navegacion";
@@ -113,5 +114,18 @@ describe("B16-4 + B5-1: la píldora de la barra inferior se mueve solo con trans
   });
   it("una sección desconocida no la saca de la barra", () => {
     expect(desplazamientoPildora(ids, "otra")).toBe("translateX(0%)");
+  });
+});
+
+describe("B9-1 y B9-3: reglas globales de index.css", () => {
+  const css = readFileSync("src/index.css", "utf8");
+  it("las cifras son de ancho fijo en toda la app", () => {
+    expect(css).toMatch(/body \{[^}]*font-variant-numeric: tabular-nums;/);
+  });
+  it("en el celular los controles miden al menos 48 px, desde la capa base", () => {
+    const base = css.slice(css.indexOf("@layer base {\n  @media (max-width: 639px), (pointer: coarse)"));
+    expect(base).toContain("min-height: 48px;");
+    expect(base).toContain("min-width: 48px;");
+    expect(base).toMatch(/:not\(p \*, \.sr-only\)/);
   });
 });
