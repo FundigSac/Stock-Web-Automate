@@ -183,7 +183,15 @@ export function useReporte({
     setUnido(true);
     medir();
     window.addEventListener("resize", medir);
-    return () => window.removeEventListener("resize", medir);
+    // Al cambiar de vista la cabecera cambia (otro título, botones que pasan a otra fila) y la campana se mueve
+    // sin que cambie la ventana: sin volver a medir, la isla quedaba anclada al lado equivocado y se salía de la pantalla.
+    const cabecera = campanaRef.current?.closest("header");
+    const ro = cabecera && typeof ResizeObserver !== "undefined" ? new ResizeObserver(() => medir()) : null;
+    if (cabecera) ro?.observe(cabecera);
+    return () => {
+      window.removeEventListener("resize", medir);
+      ro?.disconnect();
+    };
   }, [modo, medir]);
 
   // Al recogerse se mantiene la isla montada hasta que termina de volver a la campana.
