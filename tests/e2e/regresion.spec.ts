@@ -728,6 +728,20 @@ test("las piezas que se cargan al abrirlas están en el precache", async ({ page
   }
 });
 
+test("en escritorio Trabajadores es una tabla con área, unidades y última entrega", async ({ context, page }) => {
+  const sb = new Falso();
+  await sb.conectar(context);
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto("/");
+  await expect(estado(page, /En línea/)).toBeVisible();
+  await irA(page, /Trabajadores/);
+  const tabla = page.getByRole("table", { name: "Trabajadores y unidades recibidas" });
+  await expect(tabla).toBeVisible();
+  await expect(tabla.getByRole("columnheader")).toHaveText(["Trabajador", "Área", "Unidades recibidas", "Última entrega"]);
+  await expect(tabla.getByRole("row")).toHaveCount(2);
+  await expect(page.getByRole("list", { name: "Trabajadores y unidades recibidas" })).toBeHidden();
+});
+
 test.describe("en el celular", () => {
   test.use({ viewport: { width: 390, height: 844 } });
 
@@ -767,9 +781,31 @@ test.describe("en el celular", () => {
     await page.goto("/");
     await expect(estado(page, /En línea/)).toBeVisible();
     await irA(page, /Más/);
-    for (const nombre of ["Movimientos", "Trabajadores", "Informes PDF"]) await expect(page.getByRole("main").getByRole("button", { name: nombre })).toBeVisible();
+    for (const nombre of ["Resumen", "Movimientos", "Trabajadores", "Informes PDF"]) await expect(page.getByRole("main").getByRole("button", { name: nombre })).toBeVisible();
     await page.getByRole("main").getByRole("button", { name: "Movimientos" }).click();
     await expect(page.getByRole("heading", { name: "Movimientos", exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Volver a Más" }).click();
+    await expect(page.getByRole("heading", { name: "Más", exact: true })).toBeVisible();
+  });
+
+  test("Resumen se abre desde Más y el gráfico de 30 días carga solo al pedirlo", async ({ context, page }) => {
+    const sb = new Falso();
+    // Una salida de hoy (fecha de Lima) para que el gráfico tenga algo que mostrar.
+    const hoy = new Date(Date.now() - 5 * 3600_000).toISOString().slice(0, 10);
+    sb.salidas = [salida({ fecha: hoy })];
+    await sb.conectar(context);
+    await page.goto("/");
+    await expect(estado(page, /En línea/)).toBeVisible();
+    await irA(page, /Más/);
+    await page.getByRole("main").getByRole("button", { name: "Resumen" }).click();
+    await expect(page.getByRole("heading", { name: "Resumen", exact: true })).toBeVisible();
+    const ver = page.getByRole("button", { name: "Ver gráfico de 30 días" });
+    await expect(ver).toBeVisible();
+    // El service worker precarga el archivo para usarlo sin red; lo que se evita es dibujarlo antes de pedirlo.
+    await expect(page.locator(".recharts-wrapper")).toHaveCount(0);
+    await ver.click();
+    await expect(ver).toBeHidden();
+    await expect(page.locator(".recharts-wrapper")).toHaveCount(1);
     await page.getByRole("button", { name: "Volver a Más" }).click();
     await expect(page.getByRole("heading", { name: "Más", exact: true })).toBeVisible();
   });

@@ -1,4 +1,4 @@
-import { Activity, ChevronRight, FileDown, Users, type LucideIcon } from "lucide-react";
+import { Activity, ChevronRight, FileDown, LayoutDashboard, Users, type LucideIcon } from "lucide-react";
 import { AvisoReporte } from "../components/CampanaReporte";
 import { Cuenta } from "../components/Cuenta";
 import { SelectorEmpresa } from "../components/SelectorEmpresa";
@@ -42,6 +42,7 @@ export function Mas({ irA, abrirPdf, cargando, delServidor, autor, avisar, recar
     // Alineado a la izquierda, en el mismo eje que el título de la pantalla.
     <div className="max-w-2xl space-y-5">
       <ul className="divide-y divide-line-2 overflow-hidden rounded-2xl border border-line bg-surface">
+        <Fila icono={LayoutDashboard} texto="Resumen" onClick={() => irA("resumen")} />
         <Fila icono={Activity} texto="Movimientos" onClick={() => irA("movimientos")} />
         <Fila icono={Users} texto="Trabajadores" onClick={() => irA("trabajadores")} />
         <Fila icono={FileDown} texto="Informes PDF" onClick={abrirPdf} disabled={cargando} />

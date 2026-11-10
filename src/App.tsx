@@ -102,7 +102,7 @@ const SECCIONES: Record<Vista, { texto: string; sub: string; icono: LucideIcon }
 const NAV_LATERAL: Vista[] = ["registrar", "resumen", "stock", "respaldo", "movimientos", "trabajadores", "mas"];
 const NAV_MOVIL: Vista[] = ["registrar", "stock", "respaldo", "mas"];
 /** En el celular estas pantallas se abren desde Más. */
-const DENTRO_DE_MAS: Vista[] = ["movimientos", "trabajadores"];
+const DENTRO_DE_MAS: Vista[] = ["resumen", "movimientos", "trabajadores"];
 const CON_CIFRAS: Vista[] = ["resumen", "stock", "movimientos", "trabajadores"];
 const POR_EMPRESA: Vista[] = ["resumen", "stock", "movimientos"];
 

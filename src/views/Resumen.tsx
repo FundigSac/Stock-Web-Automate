@@ -1,4 +1,4 @@
-import { Activity, ArrowDownToLine, ArrowUpFromLine, ChevronRight, Monitor, Package } from "lucide-react";
+import { Activity, ArrowDownToLine, ArrowUpFromLine, ChevronRight, Package } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
 import { Card, Chip, CountUp, Vacio, useEsEscritorio } from "../components/ui";
 import { MovChart } from "../components/MovChartDiferido";
@@ -11,8 +11,9 @@ const enlace = "inline-flex min-h-14 items-center gap-1 text-[16px] font-semibol
 
 /** Vista de escritorio: qué reponer, cuánto hay y cómo se movió el almacén. */
 export function Resumen({ todos, datos, minimo, empresa, cambiarEmpresa, abrirProducto, irA }: VistaProps) {
-  // El gráfico solo se monta en escritorio: así recharts no se descarga en el celular.
+  // En escritorio el gráfico se monta de una vez; en el celular, cuando se pide (dibujarlo con recharts es costoso).
   const escritorio = useEsEscritorio();
+  const [verGrafico, setVerGrafico] = useState(false);
   const r = useMemo(() => resumir(datos.stock, minimo), [datos.stock, minimo]);
   const filasEmpresa = useMemo(() => porEmpresa(todos.stock, minimo), [todos.stock, minimo]);
   const movs = useMemo(() => movimientosDe(datos), [datos]);
@@ -245,13 +246,14 @@ export function Resumen({ todos, datos, minimo, empresa, cambiarEmpresa, abrirPr
               <div className="grid h-[260px] place-items-center rounded-lg border border-dashed border-line">
                 <Vacio icono={<Activity className="size-6" />} titulo="Aún no hay movimientos en estos 30 días" texto="Cuando registres una entrada o una salida, aparecerá en el gráfico." />
               </div>
-            ) : escritorio ? (
+            ) : escritorio || verGrafico ? (
               <MovChart serie={serie} />
             ) : (
+              // En el celular el gráfico se dibuja solo si se pide: la pantalla abre sin el costo de recharts en el hilo principal.
               <div className="grid h-[260px] place-items-center rounded-lg bg-ground px-6 text-center">
-                <p className="flex items-center gap-2 text-[16px] text-muted">
-                  <Monitor className="size-5 shrink-0" aria-hidden /> El gráfico se ve en una pantalla más ancha.
-                </p>
+                <button type="button" onClick={() => setVerGrafico(true)} className="inline-flex min-h-14 items-center gap-2 rounded-md border border-line bg-surface px-5 text-[16px] font-semibold text-ink">
+                  <Activity className="size-5 shrink-0" aria-hidden /> Ver gráfico de 30 días
+                </button>
               </div>
             )}
           </div>

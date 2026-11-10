@@ -76,7 +76,34 @@ export function Trabajadores({ todos, abrirTrabajador, editor, abrirNuevoTrabaja
             {visibles.length === 0 ? (
               <Vacio icono={<Users className="size-6" />} titulo="No hay trabajadores aquí" texto="Todavía no hay personal cargado." />
             ) : (
-              <ul className="divide-y divide-line-2" aria-label="Trabajadores y unidades recibidas">
+              <>
+              {/* En escritorio, tabla para comparar de un vistazo; en el celular, la lista de abajo. */}
+              <table className="hidden w-full text-left lg:table" aria-label="Trabajadores y unidades recibidas">
+                <thead className="border-b border-line-2 text-[14px] text-muted">
+                  <tr>
+                    <th scope="col" className="px-4 py-3 font-semibold">Trabajador</th>
+                    <th scope="col" className="px-4 py-3 font-semibold">Área</th>
+                    <th scope="col" className="px-4 py-3 text-right font-semibold">Unidades recibidas</th>
+                    <th scope="col" className="px-4 py-3 font-semibold">Última entrega</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-line-2">
+                  {visibles.map((t) => (
+                    <tr key={t.trabajador} className="hover:bg-ground">
+                      <td className="px-4 py-2">
+                        <button type="button" onClick={() => abrirTrabajador(t.trabajador)} className="flex min-h-12 items-center gap-3 text-left text-[16px] font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-action">
+                          <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-ground text-[14px] text-muted" aria-hidden>{iniciales(t.trabajador)}</span>
+                          <span className="[overflow-wrap:anywhere]">{titulo(t.trabajador)}</span>
+                        </button>
+                      </td>
+                      <td className="px-4 py-2 text-[16px] text-muted">{titulo(t.area ?? "Sin área")}</td>
+                      <td className="num px-4 py-2 text-right text-[18px] font-semibold">{entero(t.prendas_recibidas)}</td>
+                      <td className="px-4 py-2 text-[16px] text-muted">{t.ultima_entrega ? fechaLarga(t.ultima_entrega) : "Sin entregas"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <ul className="divide-y divide-line-2 lg:hidden" aria-label="Trabajadores y unidades recibidas">
                 {visibles.map((t) => (
                   <li key={t.trabajador}>
                     <button type="button" onClick={() => abrirTrabajador(t.trabajador)} className="flex min-h-16 w-full items-center gap-3 px-4 py-3 text-left hover:bg-ground focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-action">
@@ -100,6 +127,7 @@ export function Trabajadores({ todos, abrirTrabajador, editor, abrirNuevoTrabaja
                   </li>
                 ))}
               </ul>
+              </>
             )}
           </Card>
         </div>
