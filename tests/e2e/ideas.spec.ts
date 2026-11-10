@@ -52,3 +52,40 @@ test.describe("B9-2 + X12-2 estado con icono y texto, el del producto es su peor
     await conIconoYTexto(ficha.locator("[data-estado]"));
   });
 });
+
+test.describe("X12-4 cantidades con signo y flecha, anuladas marcadas", () => {
+  test("Movimientos", async ({ page }) => {
+    await abrir(page);
+    await irA(page, /^Movimientos/);
+    await page.getByRole("button", { name: /Mostrar anulados/ }).click();
+    const entrada = page.locator('main [data-cantidad="entrada"]').first();
+    await expect(entrada).toContainText("+12");
+    await expect(entrada.locator("svg")).toHaveCount(1);
+    await expect(entrada.locator(".sr-only")).toHaveText("Entrada de 12 unidades");
+    const salida = page.locator('main [data-cantidad="salida"]:not([data-anulado])').first();
+    await expect(salida).toContainText("−3");
+    await expect(salida.locator(".sr-only")).toHaveText("Salida de 3 unidades");
+    const anulada = page.locator("main [data-anulado]");
+    await expect(anulada).toHaveCount(1);
+    await expect(anulada.locator(".sr-only")).toContainText("anulada");
+    await expect(page.locator("main [data-marca-anulado]")).toHaveText("Anulado");
+  });
+
+  test("historial del producto y del trabajador", async ({ page }) => {
+    await abrir(page);
+    await irA(page, /^Stock/);
+    await page.getByRole("button", { name: /Pantalón Drill/ }).first().click();
+    let ficha = page.getByRole("dialog");
+    await expect(ficha.locator("[data-marca-anulado]")).toHaveCount(1);
+    await expect(ficha.locator("[data-anulado]")).toContainText("−2");
+    await page.keyboard.press("Escape");
+    await expect(ficha).toBeHidden();
+
+    await irA(page, /^Trabajadores/);
+    await page.getByRole("button", { name: /Diego Soto/ }).first().click();
+    ficha = page.getByRole("dialog");
+    await expect(ficha.locator('[data-cantidad="salida"]')).toHaveCount(2);
+    await expect(ficha.locator('[data-cantidad="salida"]:not([data-anulado])')).toContainText("−3");
+    await expect(ficha.locator("[data-marca-anulado]")).toHaveCount(1);
+  });
+});

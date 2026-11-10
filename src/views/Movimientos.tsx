@@ -1,8 +1,8 @@
-import { Activity, ArrowDownToLine, ArrowUpFromLine, Ban, Plus, Search } from "lucide-react";
+import { Activity, ArrowDown, ArrowUp, Ban, PackageMinus, PackagePlus, Plus, Search } from "lucide-react";
 import { useMemo, useState } from "react";
 import { MovChart } from "../components/MovChartDiferido";
 import { MiniFoto, VisorFoto } from "../components/Evidencia";
-import { Boton, Card, Chip, Kicker, Vacio } from "../components/ui";
+import { Boton, CantidadMov, Card, Chip, Kicker, MarcaAnulado, Vacio } from "../components/ui";
 import { momentoMovimiento, movimientosDe, serieDiaria, sumaMovs } from "../lib/derive";
 import { entero, etiquetaTalla, fechaLarga, hoyISO, norm, nombreProducto, partirMovimiento, sumarDias, titulo } from "../lib/format";
 import type { Movimiento } from "../lib/types";
@@ -80,8 +80,8 @@ export function Movimientos({ todos, datos, editor, pedirAnular, abrirRegistro, 
   }, [dibujados, limite]);
 
   const resumen = [
-    { etiqueta: "Entraron", valor: `+${entero(tot.entradas)}`, nota: "unidades compradas o repuestas", icono: <ArrowDownToLine className="size-4" />, tono: "" },
-    { etiqueta: "Salieron", valor: tot.salidas ? `−${entero(tot.salidas)}` : "0", nota: "unidades vendidas o entregadas", icono: <ArrowUpFromLine className="size-4" />, tono: "text-red" },
+    { etiqueta: "Entraron", valor: `+${entero(tot.entradas)}`, nota: "unidades compradas o repuestas", icono: <ArrowUp className="size-4" />, tono: "" },
+    { etiqueta: "Salieron", valor: tot.salidas ? `−${entero(tot.salidas)}` : "0", nota: "unidades vendidas o entregadas", icono: <ArrowDown className="size-4" />, tono: "text-red" },
     {
       etiqueta: "Diferencia",
       valor: `${tot.neto > 0 ? "+" : tot.neto < 0 ? "−" : ""}${entero(Math.abs(tot.neto))}`,
@@ -218,19 +218,17 @@ export function Movimientos({ todos, datos, editor, pedirAnular, abrirRegistro, 
                           className={cn("mt-0.5 grid size-10 shrink-0 place-items-center rounded-full", esEntrada ? "bg-ground text-ink" : "bg-red-soft text-red")}
                           aria-hidden
                         >
-                          {esEntrada ? <ArrowDownToLine className="size-[18px]" /> : <ArrowUpFromLine className="size-[18px]" />}
+                          {esEntrada ? <PackagePlus className="size-[18px]" /> : <PackageMinus className="size-[18px]" />}
                         </span>
 
                         <div className="min-w-0 flex-1">
                           <div className="flex items-start justify-between gap-3">
                             <p className={cn("text-[14.5px] font-semibold leading-snug", m.anulado && "line-through")}>{nombreProducto(nombre, empresa)}</p>
-                            <p className={cn("display num shrink-0 text-[20px] font-semibold leading-none", !esEntrada && "text-red", m.anulado && "line-through")}>
-                              {esEntrada ? "+" : "−"}
-                              {entero(m.cantidad)}
-                            </p>
+                            <CantidadMov tipo={m.tipo} cantidad={m.cantidad} anulado={m.anulado} className="display text-[20px] leading-none" />
                           </div>
 
                           <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-muted">
+                            {m.anulado && <MarcaAnulado />}
                             <span className="font-semibold text-ink">{esEntrada ? "Entrada" : "Salida"}</span>
                             {m.etiqueta && <span className="rounded-md bg-ground px-1.5 py-0.5 font-semibold text-ink">Cambio de prenda</span>}
                             {talla && <span className="rounded-md bg-ground px-1.5 py-0.5 font-semibold text-ink">{etiquetaTalla(talla)}</span>}

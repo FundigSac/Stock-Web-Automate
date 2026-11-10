@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { agruparProductos, estadoProducto, GRAVEDAD, textoEstadoProducto } from "../../src/lib/derive";
+import { agruparProductos, entregasDe, estadoProducto, GRAVEDAD, signoMovimiento, textoEstadoProducto } from "../../src/lib/derive";
+import { entero } from "../../src/lib/format";
 import type { StockItem } from "../../src/lib/types";
 
 const talla = (codigo: string, queda: number, producto = "POLO AZUL"): StockItem => ({
@@ -45,5 +46,25 @@ describe("B9-2 + X12-2: el estado del producto es el de su peor talla", () => {
   it("agruparProductos usa la misma gravedad", () => {
     const [g] = agruparProductos([talla("P-S", 1), talla("P-M", 0)], 2);
     expect(g.peor).toBe("sin");
+  });
+});
+
+describe("X12-4: los movimientos llevan signo y sentido", () => {
+  it("entrada sube con + y flecha arriba; salida baja con signo de resta y flecha abajo", () => {
+    expect(signoMovimiento("entrada", 12)).toEqual({ texto: "+12", flecha: "↑", lectura: "Entrada de 12 unidades" });
+    expect(signoMovimiento("salida", 3)).toEqual({ texto: "−3", flecha: "↓", lectura: "Salida de 3 unidades" });
+    expect(signoMovimiento("salida", 1).lectura).toBe("Salida de 1 unidad");
+    expect(signoMovimiento("entrada", 1200).texto).toBe(`+${entero(1200)}`);
+  });
+
+  it("una anulada lo dice en voz alta", () => {
+    expect(signoMovimiento("salida", 2, true).lectura).toBe("Salida de 2 unidades, anulada: no cuenta en el stock");
+  });
+
+  it("el historial de una persona puede incluir las anuladas sin cambiar el de siempre", () => {
+    const s = (id: number, anulado: boolean) => ({ id, fecha: "2026-11-05", codigo: "P", producto: "P", cantidad: 1, trabajador_cliente: "DIEGO", area: null, nota: null, foto_path: null, anulado, anulado_motivo: null, anulado_por: null, anulado_at: null, creado_por: null, created_at: "2026-11-05T10:00:00Z", etiqueta: null, cambio_ref: null });
+    const salidas = [s(1, false), s(2, true)];
+    expect(entregasDe(salidas, "DIEGO").map((x) => x.id)).toEqual([1]);
+    expect(entregasDe(salidas, "DIEGO", true).map((x) => x.id).sort()).toEqual([1, 2]);
   });
 });

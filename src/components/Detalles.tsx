@@ -5,7 +5,7 @@ import { entero, etiquetaTalla, fechaLarga, nombreProducto, nombreTallaEn, parti
 import type { Datos } from "../lib/types";
 import { cn } from "../lib/utils";
 import { MiniFoto, VisorFoto } from "./Evidencia";
-import { EstadoBadge, Kicker, Tabla, Ventana, td, th } from "./ui";
+import { CantidadMov, EstadoBadge, Kicker, MarcaAnulado, Tabla, Ventana, td, th } from "./ui";
 
 export function VentanaProducto({
   grupo,
@@ -26,7 +26,8 @@ export function VentanaProducto({
   const movs = useMemo(() => {
     if (!grupo) return [];
     const codigos = new Set(grupo.tallas.map((t) => t.codigo));
-    return movimientosDe(datos).filter((m) => m.codigo && codigos.has(m.codigo));
+    // Las anuladas también se ven, marcadas: explican por qué el saldo no cuadra con lo que se recuerda.
+    return movimientosDe(datos, true).filter((m) => m.codigo && codigos.has(m.codigo));
   }, [grupo, datos]);
 
   if (!grupo) return null;
@@ -110,10 +111,10 @@ export function VentanaProducto({
       ) : (
         <ul className="mt-2 divide-y divide-line-2">
           {movs.slice(0, 40).map((m) => (
-            <li key={m.key} className="flex items-center gap-3 py-2.5 text-[13px]">
+            <li key={m.key} className={cn("flex items-center gap-3 py-2.5 text-[13px]", m.anulado && "text-muted")}>
               <span className="w-24 shrink-0 text-muted">{m.fecha ? fechaLarga(m.fecha) : "Sin fecha"}</span>
               <span className="min-w-0 flex-1">
-                <span className="block truncate">
+                <span className={cn("block truncate", m.anulado && "line-through")}>
                   {m.tipo === "entrada" ? "Entrada" : "Salida"}
                   {m.persona ? ` · ${titulo(m.persona)}` : ""}
                 </span>
@@ -121,12 +122,10 @@ export function VentanaProducto({
                   {partirMovimiento(m.producto).talla ? etiquetaTalla(partirMovimiento(m.producto).talla) : m.codigo}
                   {m.nota ? ` · ${m.nota}` : ""}
                 </span>
+                {m.anulado && <MarcaAnulado className="mt-1" />}
               </span>
               {m.foto && <MiniFoto ruta={m.foto} onAbrir={setFoto} className="size-10" />}
-              <b className={cn("num w-10 text-right", m.tipo === "salida" && "text-red")}>
-                {m.tipo === "entrada" ? "+" : "−"}
-                {entero(m.cantidad)}
-              </b>
+              <CantidadMov tipo={m.tipo} cantidad={m.cantidad} anulado={m.anulado} className="min-w-12 justify-end" />
             </li>
           ))}
         </ul>
@@ -147,7 +146,7 @@ export function VentanaTrabajador({
 }) {
   const [foto, setFoto] = useState<string | null>(null);
   const t = datos.trabajadores.find((x) => x.trabajador === nombre) ?? null;
-  const entregas = useMemo(() => entregasDe(datos.salidas, nombre), [datos.salidas, nombre]);
+  const entregas = useMemo(() => entregasDe(datos.salidas, nombre, true), [datos.salidas, nombre]);
   if (!nombre || !t) return null;
 
   return (
@@ -170,14 +169,15 @@ export function VentanaTrabajador({
       ) : (
         <ul className="mt-2 divide-y divide-line-2">
           {entregas.map((s) => (
-            <li key={s.id} className="flex items-center gap-3 py-2.5 text-[13px]">
+            <li key={s.id} className={cn("flex items-center gap-3 py-2.5 text-[13px]", s.anulado && "text-muted")}>
               <span className="w-24 shrink-0 text-muted">{fechaLarga(s.fecha)}</span>
               <span className="min-w-0 flex-1">
-                <span className="block truncate">{partirMovimiento(s.producto).nombre ? nombreProducto(partirMovimiento(s.producto).nombre) : s.codigo}</span>
+                <span className={cn("block truncate", s.anulado && "line-through")}>{partirMovimiento(s.producto).nombre ? nombreProducto(partirMovimiento(s.producto).nombre) : s.codigo}</span>
                 {partirMovimiento(s.producto).talla && <span className="block text-[11.5px] text-faint">{etiquetaTalla(partirMovimiento(s.producto).talla)}</span>}
+                {s.anulado && <MarcaAnulado className="mt-1" />}
               </span>
               {s.foto_path && <MiniFoto ruta={s.foto_path} onAbrir={setFoto} className="size-10" />}
-              <b className="num">{entero(s.cantidad)}</b>
+              <CantidadMov tipo="salida" cantidad={s.cantidad} anulado={s.anulado} className="min-w-12 justify-end" />
             </li>
           ))}
         </ul>

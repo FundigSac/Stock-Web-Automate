@@ -217,6 +217,18 @@ export function movimientosDe(d: Datos, conAnulados = false): Movimiento[] {
   return out.sort((a, b) => b.fecha.localeCompare(a.fecha) || Date.parse(b.creado) - Date.parse(a.creado));
 }
 
+/** Cantidad con signo y sentido: "+12" sube el stock, "−3" lo baja. El signo es el de resta (U+2212), no un guion. */
+export function signoMovimiento(tipo: "entrada" | "salida", cantidad: number, anulado = false): { texto: string; flecha: "↑" | "↓"; lectura: string } {
+  const n = entero(Math.abs(cantidad));
+  const unidades = Math.abs(cantidad) === 1 ? "unidad" : "unidades";
+  const lectura = tipo === "entrada" ? `Entrada de ${n} ${unidades}` : `Salida de ${n} ${unidades}`;
+  return {
+    texto: tipo === "entrada" ? `+${n}` : `−${n}`,
+    flecha: tipo === "entrada" ? "↑" : "↓",
+    lectura: anulado ? `${lectura}, anulada: no cuenta en el stock` : lectura,
+  };
+}
+
 /** Cuándo pasó un movimiento. La hora de la foto y la fecha del registro son dos datos y no se mezclan. */
 export function momentoMovimiento(m: Pick<Movimiento, "fecha" | "creado" | "foto" | "capturado" | "origenHora" | "pendiente">): string {
   if (m.capturado && m.origenHora !== "registro" && (m.foto || m.pendiente)) {
@@ -227,9 +239,9 @@ export function momentoMovimiento(m: Pick<Movimiento, "fecha" | "creado" | "foto
 }
 
 /** Entregas de una persona, las más recientes primero. Un cambio de prenda no cuenta como entrega, igual que en el PDF. Dentro del día manda la hora real: el id solo dice en qué orden subieron. */
-export function entregasDe(salidas: Salida[], nombre: string | null): Salida[] {
+export function entregasDe(salidas: Salida[], nombre: string | null, conAnuladas = false): Salida[] {
   return salidas
-    .filter((s) => s.trabajador_cliente === nombre && !s.anulado && !s.etiqueta)
+    .filter((s) => s.trabajador_cliente === nombre && (conAnuladas || !s.anulado) && !s.etiqueta)
     .sort((a, b) => b.fecha.localeCompare(a.fecha) || Date.parse(b.capturado_en ?? b.created_at) - Date.parse(a.capturado_en ?? a.created_at));
 }
 

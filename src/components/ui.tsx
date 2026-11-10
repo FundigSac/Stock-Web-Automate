@@ -1,8 +1,8 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import { animate } from "framer-motion";
-import { AlertOctagon, AlertTriangle, CheckCircle2, CircleSlash, X, type LucideIcon } from "lucide-react";
+import { AlertOctagon, AlertTriangle, ArrowDown, ArrowUp, Ban, CheckCircle2, CircleSlash, X, type LucideIcon } from "lucide-react";
 import { useEffect, useId, useRef, useState, type ButtonHTMLAttributes, type HTMLAttributes, type ReactNode } from "react";
-import { ESTADO_TEXTO } from "../lib/derive";
+import { ESTADO_TEXTO, signoMovimiento } from "../lib/derive";
 import { entero } from "../lib/format";
 import { marcarEdicion } from "../lib/offline/recarga";
 import type { Estado } from "../lib/types";
@@ -52,7 +52,33 @@ export function EstadoBadge({ estado, texto, className }: { estado: Estado; text
   );
 }
 
-type BtnProps = ButtonHTMLAttributes<HTMLButtonElement> & { variante?: "ink" | "claro" | "fantasma" };
+/** Cantidad de un movimiento con signo y flecha (+12 ↑ entrada, −3 ↓ salida). Una anulada queda tachada y en gris. */
+export function CantidadMov({ tipo, cantidad, anulado = false, className }: { tipo: "entrada" | "salida"; cantidad: number; anulado?: boolean; className?: string }) {
+  const s = signoMovimiento(tipo, cantidad, anulado);
+  const Flecha = tipo === "entrada" ? ArrowUp : ArrowDown;
+  return (
+    <span
+      data-cantidad={tipo}
+      data-anulado={anulado || undefined}
+      className={cn("num inline-flex shrink-0 items-center gap-0.5 whitespace-nowrap font-semibold", tipo === "salida" && "text-red", anulado && "text-faint", className)}
+    >
+      <span aria-hidden className={cn(anulado && "line-through")}>{s.texto}</span>
+      <Flecha aria-hidden className="size-[0.8em] shrink-0" strokeWidth={2.75} />
+      <span className="sr-only">{s.lectura}</span>
+    </span>
+  );
+}
+
+/** Marca de movimiento anulado: icono y texto, no solo un tachado. */
+export function MarcaAnulado({ className }: { className?: string }) {
+  return (
+    <span data-marca-anulado className={cn("inline-flex items-center gap-1 rounded-md bg-red-soft px-1.5 py-0.5 text-[11px] font-semibold text-red", className)}>
+      <Ban className="size-3" aria-hidden /> Anulado
+    </span>
+  );
+}
+
+type BtnProps =ButtonHTMLAttributes<HTMLButtonElement> & { variante?: "ink" | "claro" | "fantasma" };
 export function Boton({ className, variante = "claro", ...p }: BtnProps) {
   return (
     <button

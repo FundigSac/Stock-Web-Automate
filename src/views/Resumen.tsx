@@ -2,8 +2,8 @@ import { motion } from "framer-motion";
 import {
   Activity,
   AlertTriangle,
-  ArrowDownToLine,
-  ArrowUpFromLine,
+  PackageMinus,
+  PackagePlus,
   CalendarClock,
   ChevronRight,
   Package,
@@ -11,7 +11,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
-import { Card, Chip, CountUp, EstadoBadge, Kicker, Vacio } from "../components/ui";
+import { CantidadMov, Card, Chip, CountUp, EstadoBadge, Kicker, Vacio } from "../components/ui";
 import { MovChart } from "../components/MovChartDiferido";
 import { AvisoEspacio } from "../components/UsoAlmacen";
 import {
@@ -341,7 +341,7 @@ export function Resumen({ todos, datos, minimo, empresa, cambiarEmpresa, abrirPr
                           m.tipo === "entrada" ? "bg-ground text-ink" : "bg-red-soft text-red",
                         )}
                       >
-                        {m.tipo === "entrada" ? <ArrowDownToLine className="size-4" /> : <ArrowUpFromLine className="size-4" />}
+                        {m.tipo === "entrada" ? <PackagePlus className="size-4" /> : <PackageMinus className="size-4" />}
                       </div>
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-[13.5px] font-semibold">{m.producto ? `${nombreProducto(partirMovimiento(m.producto).nombre)} · ${etiquetaTalla(partirMovimiento(m.producto).talla).toLowerCase()}` : m.codigo || "—"}</p>
@@ -350,10 +350,7 @@ export function Resumen({ todos, datos, minimo, empresa, cambiarEmpresa, abrirPr
                           {m.persona ? ` · ${titulo(m.persona)}` : ""}
                         </p>
                       </div>
-                      <b className={cn("num text-[14px]", m.tipo === "salida" && "text-red")}>
-                        {m.tipo === "entrada" ? "+" : "−"}
-                        {entero(m.cantidad)}
-                      </b>
+                      <CantidadMov tipo={m.tipo} cantidad={m.cantidad} anulado={m.anulado} className="text-[14px]" />
                     </li>
                   ))}
                 </ul>
