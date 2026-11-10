@@ -881,3 +881,31 @@ test.describe("entrada Línea de flujo", () => {
     await context.close();
   });
 });
+
+// §9D: sin desborde horizontal en ninguna vista, en los anchos pedidos (datos simulados, sin la base real).
+for (const [ancho, alto] of [[360, 800], [375, 812], [390, 844], [768, 1024], [1280, 800], [1440, 900], [1920, 1080]] as const) {
+  test(`sin desborde horizontal en todas las vistas a ${ancho}×${alto}`, async ({ context, page }) => {
+    const sb = new Falso();
+    sb.salidas = [salida({})];
+    await sb.conectar(context);
+    await page.setViewportSize({ width: ancho, height: alto });
+    await page.goto("/");
+    await expect(estado(page, /En línea/)).toBeVisible();
+    const vistas = ancho >= 1024 ? ["Resumen", "Stock", "Por subir", "Movimientos", "Trabajadores", "Más"] : ["Stock", "Por subir", "Más"];
+    for (const v of ["Registrar", ...vistas]) {
+      await irA(page, new RegExp(`^${v}`));
+      await page.waitForTimeout(150);
+      const desborde = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+      expect(desborde, `${v} a ${ancho}px`).toBeLessThanOrEqual(1);
+    }
+    if (ancho < 1024) {
+      for (const v of ["Resumen", "Movimientos", "Trabajadores"]) {
+        await irA(page, /Más/);
+        await page.getByRole("main").getByRole("button", { name: v }).click();
+        await page.waitForTimeout(150);
+        const desborde = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+        expect(desborde, `${v} a ${ancho}px`).toBeLessThanOrEqual(1);
+      }
+    }
+  });
+}
