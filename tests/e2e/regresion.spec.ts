@@ -577,3 +577,51 @@ test("una copia sin movimientos lo dice en vez de mostrar el historial vacío", 
   await expect(page.getByText("Sin movimientos para mostrar")).toHaveCount(0);
   await expect(page.getByText("El almacén quedó igual")).toHaveCount(0);
 });
+
+test.describe("entrada Línea de flujo", () => {
+  test("se ve una vez por sesión, se retira sola y no bloquea el primer toque", async ({ context, page }) => {
+    const sb = new Falso();
+    await sb.conectar(context);
+    // La línea dura 0,9 s desde el primer pintado: se revisa antes de que termine de cargar la página.
+    await page.goto("/", { waitUntil: "commit" });
+    await expect(page.locator("html")).toHaveAttribute("data-intro", "", { timeout: 1000 });
+    expect(await page.locator(".fx-flow-line").evaluate((e) => getComputedStyle(e).pointerEvents)).toBe("none");
+    // Corre bajo la cabecera restaurada, no encima de ella.
+    expect(await page.locator(".fx-flow-line").evaluate((e) => e.parentElement?.tagName)).toBe("HEADER");
+    await expect(page.locator("html")).not.toHaveAttribute("data-intro", /.*/, { timeout: 2500 });
+    await expect(page.locator(".fx-flow-line")).toBeHidden();
+    await page.reload();
+    await expect(estado(page, /En vivo|Conectado/)).toBeVisible();
+    await expect(page.locator("html")).not.toHaveAttribute("data-intro", /.*/);
+  });
+
+  test("con movimiento reducido no aparece", async ({ browser }) => {
+    const context = await browser.newContext({ reducedMotion: "reduce" });
+    const sb = new Falso();
+    await sb.conectar(context);
+    const page = await context.newPage();
+    await page.goto("/");
+    await expect(page.locator("html")).not.toHaveAttribute("data-intro", /.*/);
+    await expect(page.locator(".fx-flow-line")).toBeHidden();
+    await context.close();
+  });
+});
+
+// §9D: sin desborde horizontal en ninguna vista, en los anchos pedidos (datos simulados, sin la base real).
+for (const [ancho, alto] of [[360, 800], [375, 812], [390, 844], [768, 1024], [1280, 800], [1440, 900], [1920, 1080]] as const) {
+  test(`sin desborde horizontal en todas las vistas a ${ancho}×${alto}`, async ({ context, page }) => {
+    const sb = new Falso();
+    sb.salidas = [salida({})];
+    await sb.conectar(context);
+    await page.setViewportSize({ width: ancho, height: alto });
+    await page.goto("/");
+    await expect(estado(page, /En vivo|Conectado/)).toBeVisible();
+    // La misma barra "Secciones" lleva a las cinco vistas: lateral en escritorio, abajo en el celular.
+    for (const v of ["Resumen", "Stock", "Movimientos", "Trabajadores", "Respaldo", "Resumen"]) {
+      await irA(page, new RegExp(`^${v}`));
+      await page.waitForTimeout(150);
+      const desborde = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+      expect(desborde, `${v} a ${ancho}px`).toBeLessThanOrEqual(1);
+    }
+  });
+}
