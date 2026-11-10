@@ -7,9 +7,7 @@ import { supabase } from "../lib/supabase";
 import type { Pedido, StockItem } from "../lib/types";
 import { CampoAutor } from "./CampoAutor";
 import { limpiarCantidad } from "./SelectorProducto";
-import { cn } from "../lib/utils";
-import { Boton, Vacio, presion } from "./ui";
-import { Ventana } from "./Ventana";
+import { Boton, Vacio, Ventana } from "./ui";
 
 /** Lista simple de lo pedido al proveedor: llegó o se cancela, línea por línea. */
 export function PedidosDialog({
@@ -84,42 +82,44 @@ export function PedidosDialog({
   }
 
   return (
-    <Ventana abierta={abierto} alCerrar={alCerrar} titulo="Pedidos pendientes" subtitulo="Marca lo que llegó del proveedor o cancela lo que ya no viene.">
+    <Ventana abierta={abierto} alCerrar={alCerrar} titulo="Pedidos pendientes" subtitulo="Lo que se pidió al proveedor y todavía no llega.">
       <div className="space-y-4">
         {pedirAutor && <CampoAutor id="pedidos-autor" autor={autor} setAutor={setAutor} />}
-        {!enLinea && <p className="rounded-lg bg-warn-soft px-4 py-3 text-[16px] font-medium leading-6 text-warn">Marcar pedidos necesita conexión. Hazlo cuando vuelva la señal.</p>}
+        {!enLinea && <p className="rounded-xl bg-warn-soft px-3.5 py-3 text-justify text-[13px] font-medium text-warn">Marcar pedidos necesita conexión. Hazlo cuando vuelva la señal.</p>}
         {error && (
-          <p role="alert" className="rounded-lg bg-red-soft px-4 py-3 text-[16px] font-medium leading-6 text-red">
+          <p role="alert" className="rounded-xl bg-red-soft px-3.5 py-3 text-justify text-[13px] font-medium text-red">
             {error}
           </p>
         )}
         {pendientes.length === 0 ? (
-          <Vacio icono={<PackageCheck className="size-6" />} titulo="No hay pedidos pendientes" texto="Cuando pidas algo al proveedor aparecerá aquí hasta que llegue." />
+          <Vacio icono={<PackageCheck className="size-5" />} titulo="No hay pedidos pendientes" texto="Cuando pidas algo al proveedor aparecerá aquí hasta que llegue." />
         ) : (
-          <ul className="divide-y divide-line-2 overflow-hidden rounded-lg border border-line">
+          <ul className="divide-y divide-line-2 overflow-hidden rounded-2xl border border-line">
             {pendientes.map((p) => {
               const { nombre, talla } = partirMovimiento(p.producto);
               const empresa = empresaDe.get(p.codigo);
               return (
-                <li key={p.id} className="space-y-3 p-4">
+                <li key={p.id} className="space-y-2.5 p-4">
                   <div>
-                    <p className="text-left text-[18px] font-semibold leading-[26px]">{nombreProducto(nombre, empresa)}</p>
-                    <p className="mt-0.5 text-left text-[16px] leading-6 text-muted">
+                    <p className="text-[14px] font-semibold leading-snug">{nombreProducto(nombre, empresa)}</p>
+                    <p className="mt-0.5 text-[12px] text-muted">
                       {talla ? `${etiquetaTalla(talla)} · ` : ""}
                       {empresa ? `${titulo(empresa)} · ` : ""}
                       pediste {entero(p.cantidad)} el {fechaCorta(p.fecha)}
                     </p>
                   </div>
                   {porCancelar === p.id ? (
-                    <div className="flex flex-wrap items-center gap-3">
-                      <p className="min-w-0 flex-1 text-left text-[16px] font-semibold text-red">¿Cancelar este pedido?</p>
-                      <Boton onClick={() => setPorCancelar(null)}>No</Boton>
-                      <button type="button" disabled={bloqueado} onClick={() => void cancelar(p)} className={cn("inline-flex min-h-14 items-center gap-2 rounded-lg bg-red px-5 text-[16px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50", presion)}>
-                        {ocupado === p.id && <Loader2 className="size-5 animate-spin" aria-hidden />} Sí, cancelar
+                    <div className="flex items-center gap-2">
+                      <p className="min-w-0 flex-1 text-[13px] font-semibold text-red">¿Cancelar este pedido?</p>
+                      <Boton className="h-10" onClick={() => setPorCancelar(null)}>
+                        No
+                      </Boton>
+                      <button type="button" disabled={bloqueado} onClick={() => void cancelar(p)} className="inline-flex h-10 items-center gap-2 rounded-xl bg-red px-4 text-[13px] font-semibold text-white transition hover:opacity-90 disabled:opacity-50">
+                        {ocupado === p.id && <Loader2 className="size-4 animate-spin" />} Sí, cancelar
                       </button>
                     </div>
                   ) : (
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-2">
                       <label className="sr-only" htmlFor={`pedido-${p.id}`}>
                         Unidades que llegaron
                       </label>
@@ -128,12 +128,12 @@ export function PedidosDialog({
                         inputMode="numeric"
                         value={cantidades[p.id] ?? String(p.cantidad)}
                         onChange={(e) => setCantidades((c) => ({ ...c, [p.id]: limpiarCantidad(e.target.value) }))}
-                        className="num h-14 w-20 shrink-0 rounded-lg border border-line bg-surface px-2 text-center text-[20px] font-semibold outline-none focus:border-action focus:outline-2 focus:outline-offset-2 focus:outline-action"
+                        className="num h-10 w-20 rounded-xl border border-line bg-surface px-3 text-center text-sm outline-none focus:border-ink"
                       />
-                      <Boton variante="ink" className="flex-1" disabled={bloqueado} onClick={() => void llego(p)}>
-                        {ocupado === p.id && <Loader2 className="size-5 animate-spin" aria-hidden />} Llegó
+                      <Boton variante="ink" className="h-10 flex-1" disabled={bloqueado} onClick={() => void llego(p)}>
+                        {ocupado === p.id && <Loader2 className="size-4 animate-spin" />} Llegó
                       </Boton>
-                      <Boton disabled={bloqueado} onClick={() => setPorCancelar(p.id)}>
+                      <Boton className="h-10" disabled={bloqueado} onClick={() => setPorCancelar(p.id)}>
                         Cancelar
                       </Boton>
                     </div>

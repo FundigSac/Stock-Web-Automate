@@ -7,8 +7,7 @@ import { hoyLima } from "../lib/tiempo";
 import type { Datos } from "../lib/types";
 import { cn } from "../lib/utils";
 import { filtrarPorEmpresa } from "../lib/derive";
-import { Boton, Chip, presion } from "./ui";
-import { Ventana } from "./Ventana";
+import { Boton, Chip, Ventana } from "./ui";
 
 const todas = (v: boolean): SeccionesPDF => ({ resumen: v, stock: v, movimientos: v, trabajadores: v, fotos: v });
 
@@ -40,8 +39,8 @@ function rango(p: PeriodoId, d: string, h: string, hoy: string): { desde: string
   return { desde: null, hasta: null };
 }
 
-const campo = "h-14 w-full rounded-lg border border-line bg-surface px-3 text-[18px] outline-none focus:border-action focus:outline-2 focus:outline-offset-2 focus:outline-action";
-const etiqueta = "mb-2 block text-left text-[16px] font-semibold text-ink-2";
+const campo = "h-11 w-full rounded-xl border border-line bg-surface px-3 text-sm outline-none transition focus:border-ink";
+const etiqueta = "mb-2 block text-xs font-semibold text-muted";
 
 export function ReportesDialog({
   abierto,
@@ -145,36 +144,35 @@ export function ReportesDialog({
   const botones = (
     <div className="space-y-3">
       {errorDatos && (
-        <p role="alert" className="rounded-lg bg-red-soft px-4 py-3 text-justify text-[16px] font-medium leading-6 text-red">
+        <p role="alert" className="rounded-xl bg-red-soft px-3.5 py-2.5 text-justify text-[13px] font-medium text-red">
           El servidor no entregó todos los datos y el informe saldría incompleto. Inténtalo cuando carguen.
         </p>
       )}
       {progreso && (
         <div role="status" aria-live="polite">
-          {/* Solo transform: la barra crece desde la izquierda sin recalcular el diseño. */}
-          <div className="h-2 overflow-hidden bg-line-2">
-            <div className="h-full origin-left bg-action transition-transform duration-200 ease-out" style={{ transform: `scaleX(${pct / 100})` }} />
+          <div className="h-1.5 overflow-hidden rounded-full bg-ground">
+            <div className="h-full rounded-full bg-ink transition-[width] duration-300" style={{ width: `${pct}%` }} />
           </div>
-          <p className="mt-1.5 text-left text-[16px] font-medium text-muted">{progreso.texto}</p>
+          <p className="mt-1.5 text-[12.5px] font-medium text-muted">{progreso.texto}</p>
         </div>
       )}
-      <div className="flex flex-col gap-3 sm:flex-row-reverse">
-        <Boton variante="ink" className="min-h-16 shrink-0 text-[18px] sm:flex-1" onClick={() => hacer("bajar")} disabled={trabajando !== null || fechasMal || errorDatos}>
-          {trabajando === "bajar" ? <Loader2 className="size-5 animate-spin" aria-hidden /> : <FileDown className="size-5" aria-hidden />} Descargar PDF
+      <div className="flex flex-col gap-2 sm:flex-row-reverse">
+        <Boton variante="ink" className="h-12 shrink-0 sm:flex-1" onClick={() => hacer("bajar")} disabled={trabajando !== null || fechasMal || errorDatos}>
+          {trabajando === "bajar" ? <Loader2 className="size-4 animate-spin" /> : <FileDown className="size-4" />} Descargar PDF
         </Boton>
-        <Boton className="shrink-0 sm:flex-1" onClick={() => hacer("ver")} disabled={trabajando !== null || fechasMal || errorDatos}>
-          {trabajando === "ver" ? <Loader2 className="size-5 animate-spin" aria-hidden /> : <Eye className="size-5" aria-hidden />} Ver en pantalla
+        <Boton className="h-12 shrink-0 sm:flex-1" onClick={() => hacer("ver")} disabled={trabajando !== null || fechasMal || errorDatos}>
+          {trabajando === "ver" ? <Loader2 className="size-4 animate-spin" /> : <Eye className="size-4" />} Ver en pantalla
         </Boton>
       </div>
     </div>
   );
 
   return (
-    <Ventana abierta={abierto} alCerrar={alCerrar} titulo="Descargar informe" subtitulo={`Un PDF para guardar o enviar. Incluye ${t.sub.charAt(0).toLowerCase()}${t.sub.slice(1)}.`} pie={botones}>
+    <Ventana abierta={abierto} alCerrar={alCerrar} titulo="Descargar informe" subtitulo={`${t.texto}: ${t.sub.charAt(0).toLowerCase()}${t.sub.slice(1)}.`} pie={botones}>
       <div className="space-y-6">
         <div>
           <p className={etiqueta}>1. Empresa</p>
-          <div className="flex flex-wrap gap-3">
+          <div className="flex flex-wrap gap-2">
             <Chip activo={empresa === "TODAS"} onClick={() => setEmpresa("TODAS")}>
               Todas
             </Chip>
@@ -189,7 +187,7 @@ export function ReportesDialog({
         {usaPeriodo && (
           <div>
             <p className={etiqueta}>2. Periodo</p>
-            <div className="flex flex-wrap gap-3">
+            <div className="flex flex-wrap gap-2">
               {PERIODOS.map((p) => (
                 <Chip key={p.id} activo={periodo === p.id} onClick={() => setPeriodo(p.id)}>
                   {p.texto}
@@ -212,12 +210,12 @@ export function ReportesDialog({
                 </div>
               </div>
             )}
-            {fechasMal && <p role="alert" className="mt-2 text-left text-[16px] font-medium text-red">La fecha "Desde" no puede ser después de "Hasta".</p>}
+            {fechasMal && <p className="mt-2 text-[12.5px] font-medium text-red">La fecha "Desde" no puede ser después de "Hasta".</p>}
           </div>
         )}
 
         {nFotos > 0 && (
-          <p className="rounded-lg bg-ground px-4 py-3 text-justify text-[16px] leading-6 text-ink-2">
+          <p className="rounded-xl bg-ground px-3.5 py-3 text-justify text-[12.5px] text-muted">
             Lleva {entero(nFotos)} {nFotos === 1 ? "foto" : "fotos"}. El PDF pesará unos {entero(estimarPesoMB(nFotos))} MB
             {nFotos > 100 ? " y puede tardar un par de minutos: deja esta ventana abierta." : "."}
           </p>
@@ -228,16 +226,16 @@ export function ReportesDialog({
             type="button"
             onClick={() => setMasOpciones((v) => !v)}
             aria-expanded={masOpciones}
-            className="-ml-1 flex min-h-14 items-center gap-2 rounded-lg px-1 text-[16px] font-semibold text-action hover:text-ink focus-visible:outline-2 focus-visible:outline-action"
+            className="flex items-center gap-1.5 text-[13px] font-semibold text-muted transition hover:text-ink"
           >
-            <ChevronDown className={cn("size-5 transition-transform duration-150 ease-out", masOpciones && "rotate-180")} aria-hidden /> Más opciones
+            <ChevronDown className={cn("size-4 transition-transform", masOpciones && "rotate-180")} /> Más opciones
           </button>
 
           {masOpciones && (
-            <div className="paso-entra mt-3 space-y-4">
+            <div className="mt-3 space-y-4">
               <div>
                 <p className={etiqueta}>Qué incluye</p>
-                <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2">
+                <div className="grid grid-cols-1 gap-2 min-[420px]:grid-cols-2">
                   {TIPOS.map((x) => (
                     <button
                       key={x.id}
@@ -245,23 +243,22 @@ export function ReportesDialog({
                       onClick={() => setTipo(x.id)}
                       aria-pressed={tipo === x.id}
                       className={cn(
-                        "min-h-16 rounded-lg border px-4 py-3 text-left",
-                        presion,
-                        tipo === x.id ? "border-action bg-action text-white" : "border-line bg-surface hover:border-faint",
+                        "rounded-xl border px-3.5 py-2.5 text-left transition",
+                        tipo === x.id ? "border-ink bg-ink text-white" : "border-line bg-surface hover:border-faint",
                       )}
                     >
-                      <span className="block text-[16px] font-semibold leading-6">{x.texto}</span>
-                      <span className={cn("block text-[14px] leading-5", tipo === x.id ? "text-white/85" : "text-muted")}>{x.sub}</span>
+                      <span className="block text-[13.5px] font-semibold">{x.texto}</span>
+                      <span className={cn("block text-[11.5px]", tipo === x.id ? "text-white/70" : "text-muted")}>{x.sub}</span>
                     </button>
                   ))}
                 </div>
               </div>
 
-              <label className="flex min-h-16 cursor-pointer items-start gap-3 rounded-lg bg-ground px-4 py-3">
-                <input type="checkbox" checked={anulados} onChange={(e) => setAnulados(e.target.checked)} className="mt-0.5 size-6 shrink-0 accent-action" />
+              <label className="flex cursor-pointer items-start gap-3 rounded-xl bg-ground px-3.5 py-3">
+                <input type="checkbox" checked={anulados} onChange={(e) => setAnulados(e.target.checked)} className="mt-0.5 size-4 accent-[#0E0F11]" />
                 <span>
-                  <span className="block text-[16px] font-semibold leading-6">Incluir movimientos anulados</span>
-                  <span className="block text-justify text-[16px] leading-6 text-muted">{tipo === "completo" ? "«Todo» los incluye con sus fotos, al final y como anexo de control. No cuentan en el stock." : "Salen al final con sus fotos, como anexo de control. No cuentan en el stock."}</span>
+                  <span className="block text-[13px] font-semibold">Incluir movimientos anulados</span>
+                  <span className="block text-justify text-[11.5px] text-muted">{tipo === "completo" ? "«Todo» los incluye con sus fotos, al final y como anexo de control. No cuentan en el stock." : "Salen al final con sus fotos, como anexo de control. No cuentan en el stock."}</span>
                 </span>
               </label>
             </div>

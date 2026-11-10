@@ -247,7 +247,7 @@ export function lecturas(r: Resumen, filas: FilaEmpresa[], movs: Movimiento[]): 
   } else {
     out.push(`${entero(r.disponibles)} de ${entero(r.articulos)} tallas tienen stock (${r.pctDisponible}%).`);
   }
-  if (r.bajo > 0) out.push(`${entero(r.bajo)} ${r.bajo === 1 ? "talla está" : "tallas están"} por agotarse: hay que ${r.bajo === 1 ? "reponerla" : "reponerlas"} pronto.`);
+  if (r.bajo > 0) out.push(`${entero(r.bajo)} ${r.bajo === 1 ? "talla está" : "tallas están"} por agotarse: hay que reponerlas pronto.`);
   if (r.revisar > 0)
     out.push(`${entero(r.revisar)} ${r.revisar === 1 ? "talla tiene" : "tallas tienen"} saldo negativo: se entregó más de lo registrado. Revisa las salidas en Movimientos y anula las que estén mal.`);
   const peor = [...filas].filter((f) => f.articulos > 0).sort((a, b) => a.pctDisponible - b.pctDisponible)[0];
@@ -259,4 +259,14 @@ export function lecturas(r: Resumen, filas: FilaEmpresa[], movs: Movimiento[]): 
   return out;
 }
 
-export { filtrarPorEmpresa } from "./filtroEmpresa";
+export function filtrarPorEmpresa(d: Datos, empresa: string): Datos {
+  if (empresa === "TODAS") return d;
+  const stock = d.stock.filter((s) => s.empresa === empresa);
+  const codigos = new Set(stock.map((s) => s.codigo));
+  return {
+    ...d,
+    stock,
+    entradas: d.entradas.filter((e) => codigos.has(e.codigo)),
+    salidas: d.salidas.filter((s) => codigos.has(s.codigo)),
+  };
+}

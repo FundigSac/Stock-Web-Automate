@@ -1,6 +1,6 @@
 import { IDBFactory } from "fake-indexeddb";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { estadoBanda } from "../../src/components/BandaEstado";
+import { estadoConexion } from "../../src/components/EstadoRed";
 import type { FotoCapturada } from "../../src/lib/foto";
 import { abrirAlmacen, cerrarAlmacen, guardarMeta, leerMeta, suscribirBloqueo } from "../../src/lib/offline/almacen";
 import { borrarBorrador, guardarBorrador, leerBorrador } from "../../src/lib/offline/borrador";
@@ -438,8 +438,8 @@ describe("estado que se muestra", () => {
   });
 
   it("no dice conectado sin una sola lectura correcta", () => {
-    const e = { enLinea: true, subiendo: false, porSubir: 0, porRevisar: 0, edad: 0, ultimaCarga: null };
-    expect(estadoBanda(e).texto).toBe("Conectando…");
+    const e = { enLinea: true, subiendo: false, porSubir: 0, sinMigracion: 0, porRevisar: 0, errorDatos: false, tiempoReal: false, edad: 0, ultimaCarga: null, ahora: 0 };
+    expect(estadoConexion(e).texto).toBe("Conectando…");
   });
 
   it("una lectura que no responde cuenta como sin conexión", async () => {

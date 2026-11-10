@@ -1,7 +1,7 @@
-import { ArrowDown, ArrowUp, ChevronsUpDown, LayoutGrid, List, Package, Plus, Search, TriangleAlert, X } from "lucide-react";
-import { useDeferredValue, useEffect, useMemo, useState } from "react";
-import { codigosProvisionales, MarcaProvisional, ProductoStock, TONO_ESTADO } from "../components/ProductoStock";
-import { Boton, Chip, Tabla, Vacio, td, th } from "../components/ui";
+import { motion } from "framer-motion";
+import { ArrowDown, ArrowUp, ChevronsUpDown, LayoutGrid, List, Package, Plus, Search } from "lucide-react";
+import { useMemo, useState } from "react";
+import { Card, Chip, EstadoBadge, Tabla, Vacio, td, th } from "../components/ui";
 import { agruparProductos, ESTADO_TEXTO, estadoDe, rangoTalla, resumir } from "../lib/derive";
 import { entero, fechaLarga, norm, nombreProducto, nombreTallaEn, titulo } from "../lib/format";
 import type { Estado, StockItem } from "../lib/types";
@@ -12,80 +12,60 @@ type Col = "empresa" | "producto" | "talla" | "queda" | "estado" | "ultimo";
 
 const PRIORIDAD: Record<Estado, number> = { revisar: 0, bajo: 1, sin: 2, ok: 3 };
 
+const CHIP_TALLA: Record<Estado, string> = {
+  ok: "bg-ink text-white",
+  bajo: "bg-warn-soft text-warn ring-1 ring-warn/25",
+  sin: "bg-ground text-faint",
+  revisar: "bg-red-soft text-red ring-1 ring-red/25",
+};
+
 type Orden = { col: Col; asc: boolean };
-
-/** Botón grande de la pantalla: 56 px y scale(0.98) en 100 ms al presionar. */
-const ACCION = "inline-flex min-h-14 items-center gap-2.5 rounded-xl px-4 text-[16px] font-semibold transition-transform duration-100 active:scale-[0.98] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-action";
-
-/** La tabla ordenable solo tiene sentido con pantalla ancha. En el celular se ven filas grandes. */
-function useAncho(consulta: string): boolean {
-  const [si, setSi] = useState(() => (typeof window !== "undefined" && window.matchMedia ? window.matchMedia(consulta).matches : false));
-  useEffect(() => {
-    if (!window.matchMedia) return;
-    const m = window.matchMedia(consulta);
-    const alCambiar = () => setSi(m.matches);
-    alCambiar();
-    m.addEventListener("change", alCambiar);
-    return () => m.removeEventListener("change", alCambiar);
-  }, [consulta]);
-  return si;
-}
 
 function Cabecera({ col, children, derecha, orden, alOrdenar }: { col: Col; children: string; derecha?: boolean; orden: Orden; alOrdenar: (f: (o: Orden) => Orden) => void }) {
   const activo = orden.col === col;
   const Icono = !activo ? ChevronsUpDown : orden.asc ? ArrowUp : ArrowDown;
   return (
-    <th scope="col" className={cn(th, "py-1", derecha && "text-right")} aria-sort={activo ? (orden.asc ? "ascending" : "descending") : "none"}>
+    <th scope="col" className={cn(th, derecha && "text-right")} aria-sort={activo ? (orden.asc ? "ascending" : "descending") : "none"}>
       <button
         type="button"
         onClick={() => alOrdenar((o) => ({ col, asc: o.col === col ? !o.asc : true }))}
-        className={cn("inline-flex min-h-14 items-center gap-1.5 transition hover:text-ink", activo && "text-ink")}
+        className={cn("inline-flex items-center gap-1.5 uppercase tracking-[0.12em] transition hover:text-ink", activo && "text-ink")}
       >
         {children}
-        <Icono className="size-4" aria-hidden />
+        <Icono className="size-3" />
       </button>
     </th>
   );
 }
 
-export function Stock({ datos, minimo, empresa, cambiarEmpresa, abrirProducto, filtroEstado, setFiltroEstado, editor, abrirNuevoProducto, abrirAsistente, abrirPedidos, pedidosPendientes }: VistaProps) {
+export function Stock({ datos, minimo, abrirProducto, filtroEstado, setFiltroEstado, editor, abrirNuevoProducto, abrirAsistente, abrirPedidos, pedidosPendientes }: VistaProps) {
   const [q, setQ] = useState("");
   const [modo, setModo] = useState<"productos" | "lista">("productos");
-  const [orden, setOrden] = useState<Orden>({ col: "producto", asc: true });
-  const ancho = useAncho("(min-width: 1024px)");
-  const verLista = ancho && modo === "lista";
-  // Escribir no espera a que se vuelva a dibujar toda la lista.
-  const qDiferida = useDeferredValue(q);
+  const [orden, setOrden] = useState<{ col: Col; asc: boolean }>({ col: "producto", asc: true });
 
   const r = useMemo(() => resumir(datos.stock, minimo), [datos.stock, minimo]);
   const todosGrupos = useMemo(() => agruparProductos(datos.stock, minimo), [datos.stock, minimo]);
   const porClave = useMemo(() => new Map(todosGrupos.map((g) => [g.clave, g])), [todosGrupos]);
-  const provisionales = useMemo(() => codigosProvisionales(datos), [datos]);
 
-  const busca = norm(qDiferida.trim());
+  const busca = norm(q.trim());
+  const pasa = (s: StockItem) => {
+    if (filtroEstado !== "todos" && estadoDe(s.queda, minimo) !== filtroEstado) return false;
+    if (!busca) return true;
+    // Se busca tanto lo que se ve en pantalla ("Pantalón con Fundigsac") como lo guardado ("PANTALON C/F").
+    return norm(`${nombreProducto(s.producto, s.empresa)} ${s.producto} ${s.codigo} ${s.talla ?? ""} ${s.empresa}`).includes(busca);
+  };
 
-  const filtrados = useMemo(
-    () =>
-      datos.stock.filter((s) => {
-        if (filtroEstado !== "todos" && estadoDe(s.queda, minimo) !== filtroEstado) return false;
-        if (!busca) return true;
-        // Se busca tanto lo que se ve en pantalla ("Pantalón con Fundigsac") como lo guardado ("PANTALON C/F").
-        return norm(`${nombreProducto(s.producto, s.empresa)} ${s.producto} ${s.codigo} ${s.talla ?? ""} ${s.empresa}`).includes(busca);
-      }),
-    [datos.stock, filtroEstado, busca, minimo],
-  );
+  const filtrados = useMemo(() => datos.stock.filter(pasa), [datos.stock, filtroEstado, busca, minimo]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const gruposVisibles = useMemo(() => {
-    const pasan = new Set(filtrados);
-    const claves = new Set(filtrados.map((s) => `${s.empresa}||${s.producto}`));
+    const ok = new Set(filtrados.map((s) => `${s.empresa}||${s.producto}`));
     return todosGrupos
-      .filter((g) => claves.has(g.clave))
-      .map((g) => ({ g, visibles: g.tallas.filter((t) => pasan.has(t)) }))
-      .sort((a, b) => a.g.empresa.localeCompare(b.g.empresa, "es") || a.g.producto.localeCompare(b.g.producto, "es"));
+      .filter((g) => ok.has(g.clave))
+      .map((g) => ({ ...g, tallas: g.tallas.filter((t) => filtrados.includes(t)) }))
+      .sort((a, b) => a.empresa.localeCompare(b.empresa, "es") || a.producto.localeCompare(b.producto, "es"));
   }, [todosGrupos, filtrados]);
 
   const lista = useMemo(() => {
-    if (!verLista) return [];
     const dir = orden.asc ? 1 : -1;
     const val = (s: StockItem): string | number => {
       switch (orden.col) {
@@ -103,116 +83,177 @@ export function Stock({ datos, minimo, empresa, cambiarEmpresa, abrirProducto, f
       const c = typeof x === "number" && typeof y === "number" ? x - y : String(x).localeCompare(String(y), "es");
       return c * dir || a.codigo.localeCompare(b.codigo);
     });
-  }, [verLista, filtrados, orden, minimo]);
+  }, [filtrados, orden, minimo]);
 
   const cuenta = (e: Estado) => (e === "ok" ? r.ok : e === "bajo" ? r.bajo : e === "sin" ? r.sin : r.revisar);
+
   const cab = { orden, alOrdenar: setOrden };
-  const variasEmpresas = new Set(gruposVisibles.map((v) => v.g.empresa)).size > 1;
 
   let empresaPrevia = "";
 
   return (
     <div className="space-y-5">
-      {/* Buscar es lo principal de esta pantalla: va arriba. La gestión queda debajo de los filtros. */}
-      <div className="space-y-3">
+      {editor && (
+        <button
+          type="button"
+          onClick={abrirNuevoProducto}
+          className="flex w-full items-center gap-3.5 rounded-2xl border border-line bg-surface p-4 text-left shadow-card transition hover:border-faint active:scale-[0.99] sm:w-auto sm:min-w-[22rem]"
+        >
+          <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-ground">
+            <Plus className="size-5" />
+          </span>
+          <span>
+            <span className="block text-[14.5px] font-semibold">Producto nuevo</span>
+            <span className="block text-[12px] text-muted">Con sus tallas y cantidades</span>
+          </span>
+        </button>
+      )}
+      {editor && (r.bajo > 0 || pedidosPendientes > 0) && (
+        <div className="flex flex-wrap gap-2">
+          {r.bajo > 0 && (
+            <button
+              type="button"
+              onClick={() => abrirAsistente("¿Qué está por agotarse?")}
+              className="inline-flex h-11 items-center gap-2 rounded-xl bg-warn-soft px-4 text-[13px] font-semibold text-warn transition active:scale-[0.98]"
+            >
+              ⚠️ {r.bajo} por agotarse · Pedir
+            </button>
+          )}
+          {pedidosPendientes > 0 && (
+            <button
+              type="button"
+              onClick={abrirPedidos}
+              className="inline-flex h-11 items-center gap-2 rounded-xl border border-line bg-surface px-4 text-[13px] font-semibold transition active:scale-[0.98]"
+            >
+              📦 {pedidosPendientes} {pedidosPendientes === 1 ? "pedido pendiente" : "pedidos pendientes"}
+            </button>
+          )}
+        </div>
+      )}
+      <Card className="flex flex-col gap-4 p-4 sm:p-5">
         <div className="flex flex-wrap items-center gap-3">
-          {/* El campo mide 56 px por dentro; el borde va aparte. */}
-          <div className="flex min-w-0 flex-1 basis-72 items-center gap-3 rounded-xl border border-line bg-surface pl-4 focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-action">
-            <Search className="size-6 shrink-0 text-faint" aria-hidden />
+          <div className="flex h-11 min-w-[220px] flex-1 items-center gap-3 rounded-xl border border-line bg-ground/60 px-3.5 focus-within:border-ink focus-within:bg-surface">
+            <Search className="size-4 text-faint" />
             <input
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              placeholder="Producto, código o talla"
+              placeholder="Buscar producto, código o talla…"
               aria-label="Buscar en el stock"
-              inputMode="search"
-              enterKeyHint="search"
-              autoComplete="off"
-              className="h-14 min-w-0 flex-1 bg-transparent text-[18px] outline-none placeholder:text-faint"
+              className="h-full w-full bg-transparent text-sm outline-none placeholder:text-faint"
             />
-            {q && (
-              <button type="button" onClick={() => setQ("")} aria-label="Borrar la búsqueda" className="grid size-14 shrink-0 place-items-center rounded-xl text-muted transition-transform duration-100 hover:text-ink active:scale-[0.98]">
-                <X className="size-6" aria-hidden />
-              </button>
-            )}
           </div>
-          {ancho && (
-            <div className="flex gap-1 rounded-md border border-line bg-surface p-1" role="group" aria-label="Forma de ver">
-              {([
-                ["productos", LayoutGrid, "Por producto"],
-                ["lista", List, "Lista"],
-              ] as const).map(([m, Icono, etiqueta]) => (
-                <button
-                  key={m}
-                  type="button"
-                  onClick={() => setModo(m)}
-                  aria-pressed={modo === m}
-                  className={cn("inline-flex min-h-14 items-center gap-2 rounded-md px-4 text-[16px] font-semibold transition-transform duration-100 active:scale-[0.98]", modo === m ? "bg-action text-white" : "text-muted hover:text-ink")}
-                >
-                  <Icono className="size-5" aria-hidden /> {etiqueta}
-                </button>
-              ))}
-            </div>
-          )}
+          <div className="flex rounded-xl border border-line p-1" role="group" aria-label="Forma de ver">
+            {([
+              ["productos", LayoutGrid, "Por producto"],
+              ["lista", List, "Lista"],
+            ] as const).map(([m, Icono, etiqueta]) => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => setModo(m)}
+                aria-pressed={modo === m}
+                className={cn(
+                  "inline-flex h-8 items-center gap-2 rounded-lg px-3 text-[13px] font-semibold transition",
+                  modo === m ? "bg-ink text-white" : "text-muted hover:text-ink",
+                )}
+              >
+                <Icono className="size-3.5" /> {etiqueta}
+              </button>
+            ))}
+          </div>
         </div>
-        {/* En el celular los estados van en una sola fila que se desliza: la búsqueda queda cerca de las cifras. */}
-        <div className="sin-barra -mx-4 flex gap-3 overflow-x-auto px-4 sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0" role="group" aria-label="Filtrar por estado">
-          <Chip activo={filtroEstado === "todos"} onClick={() => setFiltroEstado("todos")} className="text-[16px]">
-            Todos <span className="num font-normal">{entero(r.articulos)}</span>
+        <div className="flex flex-wrap gap-2">
+          <Chip activo={filtroEstado === "todos"} onClick={() => setFiltroEstado("todos")}>
+            Todos <span className="num opacity-70">{entero(r.articulos)}</span>
           </Chip>
           {(["ok", "bajo", "sin", "revisar"] as Estado[])
             .filter((e) => e !== "revisar" || r.revisar > 0)
             .map((e) => (
-              <Chip key={e} activo={filtroEstado === e} onClick={() => setFiltroEstado(e)} className="text-[16px]">
-                {ESTADO_TEXTO[e]} <span className="num font-normal">{entero(cuenta(e))}</span>
+              <Chip key={e} activo={filtroEstado === e} onClick={() => setFiltroEstado(e)}>
+                {ESTADO_TEXTO[e]}{" "}
+                <span className="num opacity-70">{entero(cuenta(e))}</span>
               </Chip>
             ))}
         </div>
-      </div>
-
-      {editor && (
-        <div className="flex flex-wrap gap-3">
-          {r.bajo > 0 && (
-            <button type="button" onClick={() => abrirAsistente("¿Qué está por agotarse?")} className={cn(ACCION, "bg-warn-soft text-warn")}>
-              <TriangleAlert className="size-5" aria-hidden />
-              <span>
-                <span className="num">{entero(r.bajo)}</span> por agotarse · Pedir
-              </span>
-            </button>
-          )}
-          {pedidosPendientes > 0 && (
-            <button type="button" onClick={abrirPedidos} className={cn(ACCION, "border border-line bg-surface text-ink hover:bg-ground")}>
-              <Package className="size-5" aria-hidden />
-              <span>
-                <span className="num">{entero(pedidosPendientes)}</span> {pedidosPendientes === 1 ? "pedido pendiente" : "pedidos pendientes"}
-              </span>
-            </button>
-          )}
-          <button type="button" onClick={abrirNuevoProducto} className={cn(ACCION, "border border-line bg-surface text-ink hover:bg-ground")}>
-            <Plus className="size-5" aria-hidden /> Producto nuevo
-          </button>
-        </div>
-      )}
+        {modo === "productos" && (
+          <p className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[12px] text-muted">
+            <span>Cada casilla es una talla con las unidades que quedan:</span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="size-2.5 rounded bg-ink" /> con stock
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="size-2.5 rounded bg-warn-soft ring-1 ring-warn/40" /> por agotarse
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="size-2.5 rounded bg-line" /> sin stock
+            </span>
+          </p>
+        )}
+      </Card>
 
       {filtrados.length === 0 ? (
-        <div className="rounded-2xl border border-line-2 bg-surface">
-          {r.articulos === 0 ? (
-            <Vacio icono={<Package className="size-6" aria-hidden />} titulo="Todavía no hay productos" texto="Cuando se agregue un producto, aquí se verá cuánto queda de cada talla." />
-          ) : busca && empresa !== "TODAS" ? (
-            // Con una empresa elegida, lo buscado puede estar en otra: se dice y se ofrece buscar en todas.
-            <>
-              <Vacio icono={<Search className="size-6" aria-hidden />} titulo={`Nada coincide con «${qDiferida.trim()}» en ${titulo(empresa)}`} texto="Solo estás viendo una empresa. Busca en todas o prueba con otra palabra." />
-              <div className="flex justify-center px-4 pb-8">
-                <Boton onClick={() => cambiarEmpresa("TODAS")}>Buscar en todas las empresas</Boton>
+        <Card>
+          <Vacio
+            icono={<Package className="size-5" />}
+            titulo="No hay tallas con ese filtro"
+            texto="Prueba con otra búsqueda o cambia el estado de arriba."
+          />
+        </Card>
+      ) : modo === "productos" ? (
+        <div className="space-y-6">
+          {gruposVisibles.map((g, i) => {
+            const nuevaEmpresa = g.empresa !== empresaPrevia;
+            empresaPrevia = g.empresa;
+            return (
+              <div key={g.clave}>
+                {nuevaEmpresa && (
+                  <h3 className="display mb-3 mt-2 flex items-center gap-3 text-lg font-semibold">
+                    {titulo(g.empresa)}
+                    <span className="h-px flex-1 bg-line" />
+                  </h3>
+                )}
+                <motion.button
+                  type="button"
+                  onClick={() => abrirProducto(porClave.get(g.clave) ?? g)}
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.3, delay: Math.min(i, 12) * 0.02 }}
+                  whileHover={{ y: -2 }}
+                  className="flex w-full flex-wrap items-center gap-x-6 gap-y-3 rounded-2xl border border-line-2 bg-surface p-4 text-left shadow-card transition-colors hover:border-line focus-visible:outline-2 focus-visible:outline-ink"
+                >
+                  <div className="min-w-[200px] flex-1">
+                    <p className="text-[14.5px] font-semibold leading-snug">{nombreProducto(g.producto, g.empresa)}</p>
+                    <p className="mt-0.5 text-[12px] text-muted">
+                      {g.genero ? `${titulo(g.genero)} · ` : ""}
+                      {g.tallas.length} {g.tallas.length === 1 ? "talla" : "tallas"}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {g.tallas.map((t) => {
+                      const e = estadoDe(t.queda, minimo);
+                      return (
+                        <span
+                          key={t.codigo}
+                          className={cn("inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[12px]", CHIP_TALLA[e])}
+                          title={`${t.codigo}: quedan ${t.queda}`}
+                        >
+                          <b className="font-semibold">{nombreTallaEn(t.talla, porClave.get(g.clave)?.tallas ?? g.tallas)}</b>
+                          <span className="num font-semibold opacity-90">{entero(t.queda)}</span>
+                        </span>
+                      );
+                    })}
+                  </div>
+                  <div className="ml-auto text-right">
+                    <p className="display num text-2xl font-semibold leading-none">{entero(g.unidades)}</p>
+                    <p className="mt-1 text-[11px] text-muted">unidades</p>
+                  </div>
+                </motion.button>
               </div>
-            </>
-          ) : busca ? (
-            <Vacio icono={<Search className="size-6" aria-hidden />} titulo={`Nada coincide con «${qDiferida.trim()}»`} texto="Prueba con otra palabra, con el código o con la talla." />
-          ) : (
-            <Vacio icono={<Package className="size-6" aria-hidden />} titulo="Ninguna talla en ese estado" texto="Elige Todos para ver el stock completo." />
-          )}
+            );
+          })}
         </div>
-      ) : verLista ? (
-        <div className="overflow-hidden rounded-2xl border border-line-2 bg-surface p-2">
+      ) : (
+        <Card className="overflow-hidden p-2">
           <Tabla etiqueta="Lista de tallas en stock" minAncho={760}>
             <thead className="border-b border-line-2">
               <tr>
@@ -225,63 +266,37 @@ export function Stock({ datos, minimo, empresa, cambiarEmpresa, abrirProducto, f
               </tr>
             </thead>
             <tbody>
-              {lista.map((s) => {
-                const e = estadoDe(s.queda, minimo);
-                const prov = provisionales.get(s.codigo);
-                return (
-                  <tr
-                    key={s.codigo}
-                    onClick={() => {
-                      const g = porClave.get(`${s.empresa}||${s.producto}`);
-                      if (g) abrirProducto(g);
-                    }}
-                    className="cursor-pointer border-b border-line-2 transition-colors last:border-0 hover:bg-ground/70"
-                  >
-                    <td className={cn(td, "text-[16px] text-muted")}>{titulo(s.empresa)}</td>
-                    <td className={td}>
-                      {/* El clic sube a la fila; el botón permite abrirla con el teclado. */}
-                      <button type="button" className="block text-left text-[16px] font-semibold hover:underline">
-                        {nombreProducto(s.producto, s.empresa)}
-                      </button>
-                      <p className="num text-left text-[14px] text-faint">{s.codigo}</p>
-                    </td>
-                    <td className={cn(td, "text-[16px]")}>{nombreTallaEn(s.talla, porClave.get(`${s.empresa}||${s.producto}`)?.tallas ?? [s])}</td>
-                    <td className={cn(td, "num text-right text-[20px] font-semibold")}>{entero(s.queda)}</td>
-                    <td className={td}>
-                      <span className="flex flex-col gap-0.5">
-                        <span className={cn("text-[16px] font-semibold", TONO_ESTADO[e])}>{ESTADO_TEXTO[e]}</span>
-                        {prov && <MarcaProvisional tipo={prov} />}
-                      </span>
-                    </td>
-                    <td className={cn(td, "text-[16px] text-muted")}>{fechaLarga(s.ultimo_movimiento)}</td>
-                  </tr>
-                );
-              })}
+              {lista.map((s) => (
+                <tr
+                  key={s.codigo}
+                  onClick={() => {
+                    const g = porClave.get(`${s.empresa}||${s.producto}`);
+                    if (g) abrirProducto(g);
+                  }}
+                  className="cursor-pointer border-b border-line-2 transition-colors last:border-0 hover:bg-ground/70"
+                >
+                  <td className={cn(td, "text-[13px] text-muted")}>{titulo(s.empresa)}</td>
+                  <td className={td}>
+                    {/* El clic sube a la fila; el botón permite abrirla con el teclado. */}
+                    <button type="button" className="block text-left text-[13.5px] font-semibold hover:underline">
+                      {nombreProducto(s.producto, s.empresa)}
+                    </button>
+                    <p className="num text-[11.5px] text-faint">{s.codigo}</p>
+                  </td>
+                  <td className={cn(td, "text-[13px]")}>{nombreTallaEn(s.talla, porClave.get(`${s.empresa}||${s.producto}`)?.tallas ?? [s])}</td>
+                  <td className={cn(td, "num text-right text-[15px] font-semibold")}>{entero(s.queda)}</td>
+                  <td className={td}>
+                    <EstadoBadge estado={estadoDe(s.queda, minimo)} />
+                  </td>
+                  <td className={cn(td, "text-[13px] text-muted")}>{fechaLarga(s.ultimo_movimiento)}</td>
+                </tr>
+              ))}
             </tbody>
           </Tabla>
-        </div>
-      ) : (
-        <div className="space-y-4">
-          {gruposVisibles.map(({ g, visibles }) => {
-            const nuevaEmpresa = variasEmpresas && g.empresa !== empresaPrevia;
-            empresaPrevia = g.empresa;
-            return (
-              <div key={g.clave}>
-                {nuevaEmpresa && (
-                  <h2 className="mb-3 mt-2 flex items-center gap-3 text-[20px] font-semibold leading-7">
-                    {titulo(g.empresa)}
-                    <span className="h-px flex-1 bg-line" aria-hidden />
-                  </h2>
-                )}
-                <ProductoStock g={g} visibles={visibles} minimo={minimo} provisionales={provisionales} alAbrir={() => abrirProducto(g)} />
-              </div>
-            );
-          })}
-        </div>
+        </Card>
       )}
-      <p className="text-center text-[14px] text-muted">
-        Mostrando <span className="num">{entero(filtrados.length)}</span> de <span className="num">{entero(r.articulos)}</span> tallas
-        {empresa !== "TODAS" && ` de ${titulo(empresa)}`}
+      <p className="text-center text-xs text-faint">
+        Mostrando {entero(filtrados.length)} de {entero(r.articulos)} tallas
       </p>
     </div>
   );

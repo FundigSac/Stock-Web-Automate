@@ -30,8 +30,7 @@ import { aBase64, consultarIA, type AccionIA, type AccionMov, type RespuestaIA, 
 import { supabase } from "../lib/supabase";
 import type { Datos, Movimiento, StockItem } from "../lib/types";
 import { cn } from "../lib/utils";
-import { Boton, presion } from "./ui";
-import { Ventana } from "./Ventana";
+import { Boton, Ventana } from "./ui";
 
 type Opcion = { texto: string; accion: () => void };
 type Mensaje = {
@@ -66,7 +65,7 @@ let contador = 0;
 
 /** Una foto adjunta sin usar deja de valer después de este tiempo. */
 const FOTO_VIGENTE_MS = 10 * 60_000;
-const AVISO_GUARDADO = "Quedó guardado en este dispositivo con su fecha y hora. Se subirá solo y puedes verlo en Por subir.";
+const AVISO_GUARDADO = "📦 Quedó guardado en este dispositivo con su fecha y hora. Se subirá solo; puedes verlo en Respaldo.";
 const filasDe = (it: ItemRespaldo) => it.lineas.filter((l) => l.idServidor !== undefined).map((l) => ({ codigo: l.codigo, queda: l.queda ?? 0, id: l.idServidor as number }));
 
 /** Reconocimiento de voz del navegador (Chrome/Android): convierte lo que dices en texto. */
@@ -230,7 +229,7 @@ export function AsistenteDialog({
 
   useEffect(() => {
     if (abierto && mensajes.length === 0) {
-      bot("Hola, soy el asistente de stock. Escribe o dicta con el micrófono: agrego stock, registro entregas con foto, hago pedidos y te aviso qué se está agotando.", {
+      bot("Hola 👋 Soy tu asistente de stock. Escribe o dicta (🎤): agrego stock, registro entregas con foto, hago pedidos y te aviso qué se está agotando.", {
         opciones: EJEMPLOS.map((e) => op(e, () => procesarRef.current(e))),
       });
     }
@@ -347,7 +346,7 @@ export function AsistenteDialog({
   // ---------------------------------------------------------------- voz
   const ayudaMicrofono = () =>
     bot(
-      "El micrófono está bloqueado para esta página. Para activarlo:\n1) Toca el candado (o los tres puntos) junto a la dirección de arriba.\n2) Entra a Permisos → Micrófono → Permitir.\n3) Recarga la página y toca el micrófono otra vez.\n\nSi usas iPhone: Ajustes → Safari → Micrófono → Preguntar, y Ajustes → General → Teclado → Activar dictado.\nMientras tanto puedes dictar con el micrófono del teclado del celular.",
+      "El micrófono está bloqueado para esta página. Para activarlo:\n1) Toca el candado 🔒 (o los ⋮) junto a la dirección de arriba.\n2) Entra a Permisos → Micrófono → Permitir.\n3) Recarga la página y toca 🎤 otra vez.\n\nSi usas iPhone: Ajustes → Safari → Micrófono → Preguntar, y Ajustes → General → Teclado → Activar dictado.\nMientras tanto puedes dictar con el micrófono del teclado del celular.",
     );
 
   /** Pide el permiso del microfono de forma explicita (sale la ventanita del navegador) antes de dictar. */
@@ -427,7 +426,7 @@ export function AsistenteDialog({
         const { capturadoEn } = momento;
         const real = origenReal(origen, momento);
         const doc = await comprimirFoto(archivo, { ladoMax: 1800, ...momento, capturadoEn, origen: real });
-        yo("Documento enviado", URL.createObjectURL(doc));
+        yo("📄 Documento enviado", URL.createObjectURL(doc));
         docRef.current = { foto: { id: nuevoUuid(), blob: doc, origen: real, ...momento }, b64: await aBase64(doc), media: "image/jpeg", texto: null };
         historialIA.current = [];
         await preguntarIA("");
@@ -436,7 +435,7 @@ export function AsistenteDialog({
       const lista = await prepararFoto(archivo, origen, ahora);
       const blob = lista.blob;
       const url = URL.createObjectURL(blob);
-      yo("Foto enviada", url);
+      yo("📷 Foto enviada", url);
       const pedida = alElegirFoto.current;
       // Siempre queda guardada: si estaba esperando una foto la usa; si no, se usa en el siguiente pedido.
       fotoRef.current = lista;
@@ -449,7 +448,7 @@ export function AsistenteDialog({
         alElegirFoto.current = null;
         pedida(lista);
       } else {
-        bot("Foto lista. Ahora dime qué entregas o qué llegó, por ejemplo «entregué 2 casco blanco a Diego», y la mando junto con el registro.");
+        bot("📎 Foto lista. Ahora dime qué entregas o qué llegó, por ejemplo «entregué 2 casco blanco a Diego», y la mando junto con el registro.");
       }
     } catch (e) {
       bot(`No pude leer la foto: ${e instanceof Error ? e.message : "inténtalo con otra"}`);
@@ -477,7 +476,7 @@ export function AsistenteDialog({
         if (texto.length > MAX_TEXTO) bot("El archivo es muy grande: leo solo las primeras filas. Si falta algo, súbelo en partes.");
         docRef.current = { foto: null, b64: null, media: "image/jpeg", texto: texto.slice(0, MAX_TEXTO) };
       }
-      yo(`Archivo: ${f.name}`);
+      yo(`📎 ${f.name}`);
       historialIA.current = [];
       await preguntarIA("");
     } catch (e) {
@@ -495,9 +494,9 @@ export function AsistenteDialog({
     modoDoc.current = false;
     bot("¿Qué mandas?", {
       opciones: [
-        op("Tomar foto de la entrega", () => camara.current?.click()),
-        op("Foto de la galería", () => galeria.current?.click()),
-        op("Hoja, PDF, Excel o Word", () => archivo.current?.click()),
+        op("📷 Tomar foto de la entrega", () => camara.current?.click()),
+        op("🖼️ Foto de la galería", () => galeria.current?.click()),
+        op("📄 Hoja, PDF, Excel o Word", () => archivo.current?.click()),
         op("Cancelar", cancelado),
       ],
     });
@@ -506,7 +505,7 @@ export function AsistenteDialog({
   function pedirFoto(t: string, alElegir: (f: FotoCapturada) => void) {
     modoDoc.current = false;
     alElegirFoto.current = alElegir;
-    bot(t, { opciones: [op("Tomar foto", () => camara.current?.click()), op("Elegir de galería", () => galeria.current?.click()), op("Cancelar", cancelado)] });
+    bot(t, { opciones: [op("📷 Tomar foto", () => camara.current?.click()), op("🖼️ Elegir de galería", () => galeria.current?.click()), op("Cancelar", cancelado)] });
   }
 
   // ---------------------------------------------------------------- utilidades de conversacion
@@ -541,7 +540,7 @@ export function AsistenteDialog({
   function textoTipo(t: Tipo) {
     const porEmpresa = new Map<string, GrupoProducto[]>();
     for (const g of t.grupos) porEmpresa.set(g.empresa, [...(porEmpresa.get(g.empresa) ?? []), g]);
-    return `${t.etiqueta} · ${Array.from(porEmpresa, ([e, gs]) => `${titulo(e)}: ${textoStock(gs)}`).join(" · ")}`;
+    return `${t.etiqueta} — ${Array.from(porEmpresa, ([e, gs]) => `${titulo(e)}: ${textoStock(gs)}`).join(" · ")}`;
   }
 
   /** Espera lo que escribas despues: si es solo el nombre del producto lo usa; si es una orden nueva la ejecuta. */
@@ -669,7 +668,7 @@ export function AsistenteDialog({
         opciones: emps.map((e) => {
           const gs = c.filter((g) => g.empresa === e);
           const u = unidades(gs);
-          return op(`${titulo(e)} · ${u > 0 ? `hay ${u} uds` : "sin stock"}`, eligio(titulo(e), () => elegirGrupo({ ...p, empresas: [e] }, alElegir)));
+          return op(`${titulo(e)} — ${u > 0 ? `hay ${u} uds` : "sin stock"}`, eligio(titulo(e), () => elegirGrupo({ ...p, empresas: [e] }, alElegir)));
         }),
       });
       return;
@@ -757,11 +756,11 @@ export function AsistenteDialog({
     cerrarOpciones();
     const unidades = ls.reduce((a, l) => a + l.n, 0);
     const u = `${entero(unidades)} ${unidades === 1 ? "unidad" : "unidades"}`;
-    const opciones: Opcion[] = [op(modo === "entrada" ? "Sí, agregar al stock" : "Sí, hacer el pedido", () => ejecutar(modo, ls, foto))];
+    const opciones: Opcion[] = [op(modo === "entrada" ? "✅ Sí, agregar al stock" : "✅ Sí, hacer el pedido", () => ejecutar(modo, ls, foto))];
     confirmacion.current = () => void ejecutar(modo, ls, foto);
-    if (modo === "entrada") opciones.push(op(foto ? "Cambiar la foto" : "Agregar con foto (opcional)", () => pedirFoto("Sube la foto de lo que llegó:", (b) => confirmar(modo, ls, b))));
+    if (modo === "entrada") opciones.push(op(foto ? "📷 Cambiar la foto" : "📷 Agregar con foto (opcional)", () => pedirFoto("📷 Sube la foto de lo que llegó:", (b) => confirmar(modo, ls, b))));
     opciones.push(op("Cancelar", cancelado));
-    bot(`${modo === "entrada" ? `Voy a agregar ${u} al stock:` : `Voy a hacer un pedido de ${u}:`}\n${resumenLineas(modo, ls)}${foto ? `\nCon foto.${avisoFechaFoto(foto, Date.now())}` : ""}\n\nRegistrando como ${firma()}. ¿Lo registro?`, { opciones, imagen: miniatura(foto) });
+    bot(`${modo === "entrada" ? `Voy a AGREGAR ${u} al stock:` : `Voy a hacer un PEDIDO de ${u}:`}\n${resumenLineas(modo, ls)}${foto ? `\n📎 Con foto.${avisoFechaFoto(foto, Date.now())}` : ""}\n\nRegistrando como ${firma()}. ¿Lo registro?`, { opciones, imagen: miniatura(foto) });
   }
 
   async function ejecutar(modo: ModoDirecto, ls: Linea[], foto: FotoCapturada | null) {
@@ -774,7 +773,7 @@ export function AsistenteDialog({
       const total = ls.reduce((a, l) => a + l.n, 0);
       if (modo === "pedido") {
         const ids = await crearPedidoEnTandas(firma(), items, "Asistente");
-        bot(`Pedido registrado (${entero(total)} ${total === 1 ? "unidad" : "unidades"}, ${ids.length} ${ids.length === 1 ? "línea" : "líneas"}).\n${resumenLineas("pedido", ls)}\n\nCuando llegue, dime «llegó el pedido de …» y lo sumo al stock.`, {
+        bot(`Pedido registrado ✅ (${entero(total)} ${total === 1 ? "unidad" : "unidades"}, ${ids.length} ${ids.length === 1 ? "línea" : "líneas"}).\n${resumenLineas("pedido", ls)}\n\nCuando llegue, dime «llegó el pedido de …» y lo sumo al stock.`, {
           opciones: [op("Ver pedidos pendientes", eligio("Pedidos pendientes", verPedidos))],
         });
         avisar(`Pedido registrado (${entero(total)} unidades)`);
@@ -794,7 +793,7 @@ export function AsistenteDialog({
           return `${nombreProducto(l.g.producto, l.g.empresa)} · ${etiquetaTalla(l.t.talla)}: +${entero(l.n)}${queda !== undefined ? ` (ahora ${entero(queda)})` : ""}`;
         })
         .join("\n");
-      bot(`Listo. Agregué ${entero(total)} ${total === 1 ? "unidad" : "unidades"} al stock${foto ? " con su foto" : ""}.\n${detalle}`, { hecho: { ids: res.map((i) => i.id), tipo: "entrada", deshecho: false } });
+      bot(`Listo ✅ Agregué ${entero(total)} ${total === 1 ? "unidad" : "unidades"} al stock${foto ? " con su foto" : ""}.\n${detalle}`, { hecho: { ids: res.map((i) => i.id), tipo: "entrada", deshecho: false } });
       avisar(`Stock agregado (+${entero(total)})`);
       quitarFoto();
     } catch (e) {
@@ -906,19 +905,19 @@ export function AsistenteDialog({
     // "¿qué está sin stock?": va directo a los que tienen alguna talla en 0
     if (o.incluirSin && !desdePedir) {
       if (sin.length > 0) verSinStock(sin);
-      else bot("No hay productos sin stock.");
+      else bot("No hay productos sin stock 🎉");
       return;
     }
     const tallasBajas = lista.reduce((a, x) => a + x.ts.length, 0);
     if (lista.length === 0) {
-      bot(`No hay productos por agotarse (con ${minimo} unidades o menos).`, {
+      bot(`No hay productos por agotarse (con ${minimo} unidades o menos) 🎉`, {
         opciones: sin.length > 0 ? [op(`Ver los sin stock (${sin.length})`, eligio("Ver los sin stock", () => verSinStock(sin)))] : undefined,
       });
       return;
     }
     const empresas = Array.from(new Set(lista.map((x) => x.g.empresa)));
     bot(
-      `Por agotarse: ${lista.length} ${lista.length === 1 ? "producto" : "productos"} (${tallasBajas} ${tallasBajas === 1 ? "talla" : "tallas"})\nA cada uno le quedan ${minimo} unidades o menos.\nTe los muestro todos, empresa por empresa:`,
+      `⚠️ POR AGOTARSE: ${lista.length} ${lista.length === 1 ? "producto" : "productos"} (${tallasBajas} ${tallasBajas === 1 ? "talla" : "tallas"})\nA cada uno le quedan ${minimo} unidades o menos.\nTe los muestro todos, empresa por empresa:`,
     );
     burbujasPorEmpresa(
       lista,
@@ -934,7 +933,7 @@ export function AsistenteDialog({
 
   function verSinStock(lista: Item[]) {
     const tallas = lista.reduce((a, x) => a + x.ts.length, 0);
-    bot(`Sin stock: ${lista.length} ${lista.length === 1 ? "producto" : "productos"} (${tallas} ${tallas === 1 ? "talla" : "tallas"} en 0).\nTe los muestro todos, empresa por empresa:`);
+    bot(`🔴 SIN STOCK: ${lista.length} ${lista.length === 1 ? "producto" : "productos"} (${tallas} ${tallas === 1 ? "talla" : "tallas"} en 0).\nTe los muestro todos, empresa por empresa:`);
     burbujasPorEmpresa(
       lista,
       (empresa, xs) => `${titulo(empresa).toUpperCase()} · ${xs.length} ${xs.length === 1 ? "producto" : "productos"}`,
@@ -951,11 +950,11 @@ export function AsistenteDialog({
       const total = g.tallas.reduce((a, t) => a + Math.max(0, t.queda), 0);
       const filas = g.tallas.map((t) => {
         const e = estadoDe(t.queda, minimo);
-        return `\u00A0\u00A0\u00A0\u00A0${etiquetaTalla(t.talla)}: ${entero(t.queda)}${e === "bajo" ? " · por agotarse" : e === "sin" ? " · sin stock" : e === "revisar" ? " · saldo negativo" : ""}`;
+        return `\u00A0\u00A0\u00A0\u00A0${etiquetaTalla(t.talla)}: ${entero(t.queda)}${e === "bajo" ? " ⚠️ por agotarse" : e === "sin" ? " · sin stock" : e === "revisar" ? " · saldo negativo" : ""}`;
       });
       const pend = datos.pedidos.filter((x) => x.estado === "pendiente" && g.tallas.some((t) => t.codigo === x.codigo));
       bot(
-        `${nombreProducto(g.producto, g.empresa)} · ${titulo(g.empresa)}${g.genero && !esSeguridad(g) ? ` · ${titulo(g.genero)}` : ""}\n${filas.join("\n")}\nTotal: ${entero(total)} unidades${pend.length ? `\nHay ${pend.length} ${pend.length === 1 ? "línea" : "líneas"} de pedido pendiente.` : ""}`,
+        `${nombreProducto(g.producto, g.empresa)} · ${titulo(g.empresa)}${g.genero && !esSeguridad(g) ? ` · ${titulo(g.genero)}` : ""}\n${filas.join("\n")}\nTotal: ${entero(total)} unidades${pend.length ? `\n📦 Hay ${pend.length} ${pend.length === 1 ? "línea" : "líneas"} de pedido pendiente.` : ""}`,
         { opciones: [op("Agregar stock", eligio("Agregar stock", () => iniciarConGrupo("entrada", g))), op("Hacer un pedido", eligio("Hacer un pedido", () => iniciarConGrupo("pedido", g)))] },
       );
     });
@@ -972,7 +971,7 @@ export function AsistenteDialog({
     const hoyMovs = recientes.filter((m) => m.fecha === hoy);
     const pend = datos.pedidos.filter((p) => p.estado === "pendiente");
     bot(
-      `Resumen\n• ${entero(unidades)} unidades en ${entero(stock.length)} tallas\n• ${bajos.length} productos por agotarse\n• ${sinStock.length} productos con alguna talla sin stock\n• ${pend.length} pedidos pendientes\n• Hoy: ${hoyMovs.filter((m) => m.tipo === "entrada").length} entradas y ${hoyMovs.filter((m) => m.tipo === "salida").length} salidas`,
+      `📊 Resumen\n• ${entero(unidades)} unidades en ${entero(stock.length)} tallas\n• ${bajos.length} productos por agotarse\n• ${sinStock.length} productos con alguna talla sin stock\n• ${pend.length} pedidos pendientes\n• Hoy: ${hoyMovs.filter((m) => m.tipo === "entrada").length} entradas y ${hoyMovs.filter((m) => m.tipo === "salida").length} salidas`,
       { opciones: [op("¿Qué se agota?", eligio("¿Qué está por agotarse?", () => mostrarBajos(entender("por agotarse"), false)))] },
     );
   }
@@ -1010,11 +1009,11 @@ export function AsistenteDialog({
     const opciones: Opcion[] = [];
     for (const g of gruposPedido.slice(0, 5)) {
       const tallas = g.lineas.map((l) => `${l.talla}×${l.cantidad}`).join(" ");
-      opciones.push(op(`Llegó: ${g.nombre} ${tallas}`, eligio(`Llegó ${g.nombre} ${tallas}`, () => confirmarRecibir(g))));
-      opciones.push(op(`Cancelar: ${g.nombre} ${tallas}`, eligio(`Cancelar ${g.nombre} ${tallas}`, () => confirmarCancelarPedido(g))));
+      opciones.push(op(`✔ Llegó: ${g.nombre} ${tallas}`, eligio(`Llegó ${g.nombre} ${tallas}`, () => confirmarRecibir(g))));
+      opciones.push(op(`✖ Cancelar: ${g.nombre} ${tallas}`, eligio(`Cancelar ${g.nombre} ${tallas}`, () => confirmarCancelarPedido(g))));
     }
     bot(
-      `Pedidos pendientes (${gruposPedido.length}):\n${gruposPedido
+      `📦 Pedidos pendientes (${gruposPedido.length}):\n${gruposPedido
         .slice(0, 12)
         .map((g) => `• ${descPedido(g)} · ${fechaCorta(g.fecha)}${g.por ? ` · ${titulo(g.por)}` : ""}`)
         .join("\n")}${gruposPedido.length > 12 ? `\n… y ${gruposPedido.length - 12} más` : ""}`,
@@ -1052,11 +1051,11 @@ export function AsistenteDialog({
     }
     if (cantidad !== null) {
       confirmacion.current = () => void hacerRecibir(g, [cantidad]);
-      bot(`Pedido: ${descPedido(g)}\nLlegaron ${entero(cantidad)} de ${entero(g.total)}. ¿Lo sumo al stock?`, { opciones: [op("Sí, sumar", () => hacerRecibir(g, [cantidad])), otra, op("No", cancelado)] });
+      bot(`Pedido: ${descPedido(g)}\nLlegaron ${entero(cantidad)} de ${entero(g.total)}. ¿Lo sumo al stock?`, { opciones: [op("✅ Sí, sumar", () => hacerRecibir(g, [cantidad])), otra, op("No", cancelado)] });
       return;
     }
     confirmacion.current = () => void hacerRecibir(g, null);
-    bot(`Pedido: ${descPedido(g)}\n¿Llegó completo? Lo sumo al stock como entrada.`, { opciones: [op("Sí, llegó completo", () => hacerRecibir(g, null)), otra, op("No", cancelado)] });
+    bot(`Pedido: ${descPedido(g)}\n¿Llegó completo? Lo sumo al stock como entrada.`, { opciones: [op("✅ Sí, llegó completo", () => hacerRecibir(g, null)), otra, op("No", cancelado)] });
   }
 
   async function hacerRecibir(g: GrupoPedido, cantidades: number[] | null) {
@@ -1071,7 +1070,7 @@ export function AsistenteDialog({
         const d = data as { queda: number; cantidad: number } | null;
         lineas.push(`+${entero(d?.cantidad ?? 0)} (ahora ${entero(d?.queda ?? 0)})`);
       }
-      bot(`Listo. Pedido recibido: ${g.nombre} · ${titulo(g.empresa)}.\n${g.lineas.map((l, i) => `\u00A0\u00A0\u00A0\u00A0${l.talla}: ${lineas[i]}`).join("\n")}\nYa está en el stock.`);
+      bot(`Listo ✅ Pedido recibido: ${g.nombre} · ${titulo(g.empresa)}.\n${g.lineas.map((l, i) => `\u00A0\u00A0\u00A0\u00A0${l.talla}: ${lineas[i]}`).join("\n")}\nYa está en el stock.`);
       avisar("Pedido recibido y sumado al stock");
     } catch (e) {
       bot(`No pude recibir el pedido: ${e instanceof Error ? e.message : "error"}`);
@@ -1096,7 +1095,7 @@ export function AsistenteDialog({
         const { error } = await supabase.rpc("cancelar_pedido", { p_quien: firma(), p_id: id });
         if (error) throw new Error(mensajeServidor(error, "No se pudo completar. Revisa tu conexión e inténtalo de nuevo."));
       }
-      bot(`Pedido cancelado: ${g.nombre} · ${titulo(g.empresa)}.`);
+      bot(`Pedido cancelado ✅ ${g.nombre} · ${titulo(g.empresa)}.`);
       avisar("Pedido cancelado");
     } catch (e) {
       bot(`No pude cancelarlo: ${e instanceof Error ? e.message : "error"}`);
@@ -1116,7 +1115,7 @@ export function AsistenteDialog({
     cerrarOpciones();
     const saldo = m.tipo === "entrada" ? stock.find((s) => s.codigo === m.codigo)?.queda : undefined;
     const quedaria = saldo !== undefined ? saldo - m.cantidad : null;
-    const avisos = [quedaria !== null && quedaria < 0 ? `Ojo: el saldo de esta talla quedará en ${entero(quedaria)}.` : "", m.etiqueta ? "Ojo: es una mitad de un cambio de prenda y la otra mitad no se anula sola." : ""].filter(Boolean).join("\n");
+    const avisos = [quedaria !== null && quedaria < 0 ? `⚠️ El saldo de esta talla quedará en ${entero(quedaria)}.` : "", m.etiqueta ? "⚠️ Es una mitad de un cambio de prenda: la otra mitad no se anula sola." : ""].filter(Boolean).join("\n");
     confirmacion.current = () => void hacerAnular(m);
     bot(`Voy a anular:\n${describir(m)}\n\n${m.tipo === "entrada" ? "El stock bajará" : "El stock subirá"} ${entero(m.cantidad)}. No se borra: queda en el historial como anulado.${avisos ? `\n${avisos}` : ""}\n¿Confirmas?`, {
       opciones: [op("Sí, anular", () => hacerAnular(m)), op("No, dejarlo", cancelado)],
@@ -1130,7 +1129,7 @@ export function AsistenteDialog({
     try {
       const { error } = await supabase.rpc("anular_movimiento", { p_quien: firma(), p_tipo: m.tipo, p_id: m.id, p_motivo: "Anulado desde el asistente" });
       if (error) throw new Error(mensajeServidor(error, "No se pudo completar. Revisa tu conexión e inténtalo de nuevo."));
-      bot(`Anulado: ${describir(m)}`);
+      bot(`Anulado ✅ ${describir(m)}`);
       avisar("Movimiento anulado");
     } catch (e) {
       bot(`No pude anularlo: ${e instanceof Error ? e.message : "error"}`);
@@ -1173,7 +1172,7 @@ export function AsistenteDialog({
     const msg = r.mensaje.trim();
     if (msg) bot(msg);
     if (r.faltan && (r.faltan.acciones > 0 || r.faltan.items > 0 || r.faltan.truncado)) {
-      bot(`Faltan filas: ${r.faltan.truncado ? "el documento era muy largo y la lectura se cortó. " : ""}${r.faltan.acciones + r.faltan.items > 0 ? `Quedaron fuera ${r.faltan.acciones + r.faltan.items}. ` : ""}Pásalo por partes para registrar el resto.`);
+      bot(`⚠️ Faltan filas: ${r.faltan.truncado ? "el documento era muy largo y la lectura se cortó. " : ""}${r.faltan.acciones + r.faltan.items > 0 ? `Quedaron fuera ${r.faltan.acciones + r.faltan.items}. ` : ""}Pásalo por partes para registrar el resto.`);
     }
     if (q) {
       // Mientras falte un dato no se registra nada: solo se muestran listas.
@@ -1193,7 +1192,7 @@ export function AsistenteDialog({
     if (v === "por_agotarse") mostrarBajos(entender("por agotarse"), false);
     else if (v === "sin_stock") {
       if (sinStock.length > 0) verSinStock(sinStock);
-      else bot("No hay productos sin stock.");
+      else bot("No hay productos sin stock 🎉");
     } else if (v === "pedidos_pendientes") verPedidos();
     else resumen();
   }
@@ -1277,14 +1276,14 @@ export function AsistenteDialog({
         if (ls.length > 0) pasos.push({ modo, persona, ls, cliente });
       } else for (const l of ls) pasos.push({ modo, persona, ls: [l], cliente });
     }
-    if (omitidas.length > 0) bot(`No incluí esto porque es ropa del otro género:\n${omitidas.join("\n")}`);
+    if (omitidas.length > 0) bot(`⚠️ No incluí esto porque es ropa del otro género:\n${omitidas.join("\n")}`);
     if (pasos.length === 0) {
       docRef.current = null;
       bot("No pude armar ningún movimiento con eso. Dímelo con producto, talla y cantidad.");
       return;
     }
     const foto = docRef.current?.foto ?? fotoVigente();
-    if (pasos.some((p) => p.modo === "salida") && !foto) pedirFoto("Para registrar las entregas necesito la foto de evidencia. Tómala o súbela:", (b) => confirmarLote(pasos, b));
+    if (pasos.some((p) => p.modo === "salida") && !foto) pedirFoto("📷 Para registrar las entregas necesito la foto de evidencia. Tómala o súbela:", (b) => confirmarLote(pasos, b));
     else confirmarLote(pasos, foto);
   }
 
@@ -1292,10 +1291,10 @@ export function AsistenteDialog({
     const u = p.ls.reduce((a, l) => a + l.n, 0);
     const cab =
       p.modo === "entrada"
-        ? `Entrada de ${entero(u)} uds`
+        ? `➕ ENTRADA de ${entero(u)} uds`
         : p.modo === "salida"
-          ? `Salida de ${entero(u)} uds a ${titulo(p.persona?.nombre)}${p.persona?.area ? ` (${titulo(p.persona.area)})` : p.cliente ? ". Ojo: no está en la lista de trabajadores y se anota como cliente" : ""}`
-          : `Pedido de ${entero(u)} uds`;
+          ? `➖ SALIDA de ${entero(u)} uds a ${titulo(p.persona?.nombre)}${p.persona?.area ? ` (${titulo(p.persona.area)})` : p.cliente ? " — ⚠️ no está en la lista de trabajadores, se anota como cliente" : ""}`
+          : `📦 PEDIDO de ${entero(u)} uds`;
     return `${cab}\n${resumenLineas(p.modo, p.ls)}`;
   }
 
@@ -1314,14 +1313,14 @@ export function AsistenteDialog({
     }
     const n = pasos.length;
     const hayFoto = pasos.some((p) => p.modo !== "pedido");
-    const opciones: Opcion[] = [op(n === 1 ? "Sí, registrar" : `Sí, registrar los ${n} movimientos`, () => void ejecutarLote(pasos, foto))];
+    const opciones: Opcion[] = [op(n === 1 ? "✅ Sí, registrar" : `✅ Sí, registrar los ${n} movimientos`, () => void ejecutarLote(pasos, foto))];
     confirmacion.current = () => void ejecutarLote(pasos, foto);
     // La IA recibe esto en el siguiente turno: si le dicen "son 3", sabe de qué hablaban.
     recordar("asistente", `Propuse esto y espero confirmación:\n${pasos.map(textoPaso).join("\n")}`);
-    if (foto && hayFoto && !docRef.current?.foto) opciones.push(op("Cambiar la foto", () => pedirFoto("Sube la nueva foto:", (b) => confirmarLote(pasos, b))));
+    if (foto && hayFoto && !docRef.current?.foto) opciones.push(op("📷 Cambiar la foto", () => pedirFoto("📷 Sube la nueva foto:", (b) => confirmarLote(pasos, b))));
     opciones.push(op("Cancelar", cancelado));
     bot(
-      `Esto entendí${docRef.current ? " del documento" : ""}:\n\n${pasos.map(textoPaso).join("\n\n")}${negativo ? "\n\nOjo: alguna talla quedará en negativo." : ""}${foto && hayFoto ? `\n\nCon foto.${avisoFechaFoto(foto, Date.now())}` : ""}\n\nRegistrando como ${firma()}. ¿Lo registro? Cada movimiento se guarda por separado.`,
+      `Esto entendí${docRef.current ? " del documento" : ""}:\n\n${pasos.map(textoPaso).join("\n\n")}${negativo ? "\n\n⚠️ Ojo: alguna talla quedará en negativo." : ""}${foto && hayFoto ? `\n\n📎 Con foto.${avisoFechaFoto(foto, Date.now())}` : ""}\n\nRegistrando como ${firma()}. ¿Lo registro? Cada movimiento se guarda por separado.`,
       { opciones, imagen: hayFoto ? miniatura(foto) : undefined },
     );
   }
@@ -1372,11 +1371,11 @@ export function AsistenteDialog({
       setTrabajando(false);
     }
     const u = (n: number) => `${entero(n)} ${n === 1 ? "unidad" : "unidades"}`;
-    if (hecho.entrada.lineas.length > 0) bot(`Listo. Agregué ${u(hecho.entrada.unidades)} al stock.\n${hecho.entrada.lineas.join("\n")}`, { hecho: { ids: hecho.entrada.ids, tipo: "entrada", deshecho: false } });
-    if (hecho.salida.lineas.length > 0) bot(`Listo. Registré ${u(hecho.salida.unidades)} de salida, con la foto de evidencia.\n${hecho.salida.lineas.join("\n")}`, { hecho: { ids: hecho.salida.ids, tipo: "salida", deshecho: false } });
-    if (hecho.pedido.lineas.length > 0) bot(`Pedido registrado (${u(hecho.pedido.unidades)}).\n${hecho.pedido.lineas.join("\n")}`);
+    if (hecho.entrada.lineas.length > 0) bot(`Listo ✅ Agregué ${u(hecho.entrada.unidades)} al stock.\n${hecho.entrada.lineas.join("\n")}`, { hecho: { ids: hecho.entrada.ids, tipo: "entrada", deshecho: false } });
+    if (hecho.salida.lineas.length > 0) bot(`Listo ✅ Registré ${u(hecho.salida.unidades)} de salida, con la foto de evidencia.\n${hecho.salida.lineas.join("\n")}`, { hecho: { ids: hecho.salida.ids, tipo: "salida", deshecho: false } });
+    if (hecho.pedido.lineas.length > 0) bot(`Pedido registrado ✅ (${u(hecho.pedido.unidades)}).\n${hecho.pedido.lineas.join("\n")}`);
     if (enRespaldo > 0) bot(AVISO_GUARDADO);
-    if (fallos.length > 0) bot(`No pude guardar ${fallos.length} ${fallos.length === 1 ? "movimiento" : "movimientos"}:\n${fallos.join("\n")}`);
+    if (fallos.length > 0) bot(`⚠️ No pude guardar ${fallos.length} ${fallos.length === 1 ? "movimiento" : "movimientos"}:\n${fallos.join("\n")}`);
     if (ok > 0) avisar(ok === 1 ? "Movimiento registrado" : `${ok} movimientos registrados`);
     recordar("asistente", fallos.length === 0 ? "Todo quedó registrado." : `Se registraron ${ok} de ${pasos.length}; hubo ${fallos.length} errores.`);
     docRef.current = null;
@@ -1393,50 +1392,49 @@ export function AsistenteDialog({
       abierta={abierto}
       alCerrar={alCerrar}
       titulo="Asistente de stock"
-      subtitulo="Escribe o dicta qué llegó, qué entregaste o qué quieres saber del stock."
+      subtitulo="Escribe o dicta lo que necesitas."
       pie={
-        <div className="space-y-3">
+        <div className="space-y-2">
           {fotoVista && (
-            <div className="flex items-center gap-3 rounded-lg bg-ground p-2">
-              <img src={fotoVista} alt="Foto lista" className="size-14 rounded-md object-cover" />
-              <p className="min-w-0 flex-1 text-[16px] leading-6 text-muted">
+            <div className="flex items-center gap-3 rounded-xl bg-ground p-2">
+              <img src={fotoVista} alt="Foto lista" className="size-11 rounded-lg object-cover" />
+              <p className="min-w-0 flex-1 text-[12.5px] text-muted">
                 <b className="text-ink">Foto lista.</b> Se manda con tu próxima entrega.
               </p>
-              <button type="button" onClick={quitarFoto} aria-label="Quitar la foto" className="grid size-14 shrink-0 place-items-center rounded-lg text-muted hover:bg-line-2 hover:text-ink">
-                <X className="size-5" aria-hidden />
+              <button type="button" onClick={quitarFoto} aria-label="Quitar la foto" className="grid size-9 place-items-center rounded-lg text-muted transition hover:bg-line-2 hover:text-ink">
+                <X className="size-4" />
               </button>
             </div>
           )}
-        {/* En el celular el campo va solo en su fila, a todo el ancho; foto, voz y Enviar quedan debajo. */}
-        <form onSubmit={enviar} className="flex flex-wrap items-center gap-2 sm:flex-nowrap">
+        <form onSubmit={enviar} className="flex items-center gap-2">
           <button
             type="button"
             onClick={adjuntarFoto}
             aria-label="Mandar una foto"
-            className={cn("grid size-14 shrink-0 place-items-center rounded-lg border", presion, fotoVista ? "border-action bg-action text-white" : "border-line bg-surface text-ink hover:bg-ground")}
+            className={cn("grid size-12 shrink-0 place-items-center rounded-xl border transition active:scale-95", fotoVista ? "border-ink bg-ink text-white" : "border-line bg-surface text-ink hover:bg-ground")}
           >
-            <Camera className="size-6" aria-hidden />
+            <Camera className="size-5" />
           </button>
           <input
             value={texto}
             onChange={(e) => setTexto(e.target.value)}
-            placeholder={escuchando ? "Escuchando… habla ahora" : "Ej.: agrega 10 polos talla M"}
+            placeholder={escuchando ? "Escuchando… habla ahora" : "Ej: agrega 10 polo manga larga talla M"}
             aria-label="Escribe tu pedido"
             autoComplete="off"
             maxLength={300}
-            className={cn("order-first h-14 min-w-0 basis-full rounded-lg border-2 bg-surface px-3 text-[18px] outline-none placeholder:text-faint focus:border-action sm:order-none sm:flex-1", escuchando ? "border-red" : "border-line")}
+            className={cn("h-12 min-w-0 flex-1 rounded-xl border bg-surface px-3.5 text-sm outline-none transition placeholder:text-faint focus:border-ink", escuchando ? "border-red" : "border-line")}
           />
           <button
             type="button"
             onClick={dictar}
             aria-label={escuchando ? "Dejar de escuchar" : "Dictar por voz"}
             aria-pressed={escuchando}
-            className={cn("grid size-14 shrink-0 place-items-center rounded-lg border", presion, escuchando ? "border-red bg-red text-white" : "border-line bg-surface text-ink hover:bg-ground")}
+            className={cn("grid size-12 shrink-0 place-items-center rounded-xl border transition active:scale-95", escuchando ? "animate-pulse border-red bg-red text-white" : "border-line bg-surface text-ink hover:bg-ground")}
           >
-            <Mic className="size-6" aria-hidden />
+            <Mic className="size-5" />
           </button>
-          <Boton type="submit" variante="ink" className="ml-auto size-14 shrink-0 px-0 sm:ml-0" disabled={!texto.trim() || trabajando} aria-label="Enviar">
-            {trabajando ? <Loader2 className="size-5 animate-spin" aria-hidden /> : <Send className="size-5" aria-hidden />}
+          <Boton type="submit" variante="ink" className="h-12 w-12 shrink-0 px-0" disabled={!texto.trim() || trabajando} aria-label="Enviar">
+            {trabajando ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
           </Boton>
         </form>
         </div>
@@ -1476,23 +1474,22 @@ export function AsistenteDialog({
           e.target.value = "";
         }}
       />
-      <div className="space-y-4 pb-1" aria-live="polite">
+      <div className="space-y-3 pb-1">
         {mensajes.map((m) => (
           <div key={m.id} className={cn("flex", m.de === "yo" ? "justify-end" : "justify-start")}>
             <div className={cn("max-w-[92%]", m.de === "yo" && "text-right")}>
-              {/* Texto corrido: justificado. Con pre-line, cada renglón que termina en salto queda como está. */}
-              <div className={cn("paso-entra whitespace-pre-line rounded-lg px-4 py-3 text-justify text-[18px] leading-[26px]", m.de === "yo" ? "bg-action text-white" : "bg-ground text-ink")}>
-                {m.imagen && <img src={m.imagen} alt="Foto enviada" className="mb-2 max-h-48 w-full rounded-md object-cover" />}
+              <div className={cn("whitespace-pre-line rounded-2xl px-3.5 py-2.5 text-left text-[13.5px] leading-relaxed", m.de === "yo" ? "rounded-br-md bg-ink text-white" : "rounded-bl-md bg-ground text-ink")}>
+                {m.imagen && <img src={m.imagen} alt="Foto enviada" className="mb-2 max-h-48 w-full rounded-xl object-cover" />}
                 {m.texto}
               </div>
               {m.opciones && (
-                <div className="mt-3 flex flex-wrap gap-3">
+                <div className="mt-2 flex flex-wrap gap-2">
                   {m.opciones.map((o) => (
                     <button
                       key={o.texto}
                       type="button"
                       onClick={o.accion}
-                      className={cn("min-h-14 rounded-lg border border-line bg-surface px-4 py-2 text-left text-[16px] font-semibold leading-6 hover:border-action", presion)}
+                      className="rounded-xl border border-line bg-surface px-3 py-2 text-left text-[13px] font-semibold transition hover:border-ink active:scale-[0.98]"
                     >
                       {o.texto}
                     </button>
@@ -1504,17 +1501,17 @@ export function AsistenteDialog({
                   type="button"
                   disabled={m.hecho.deshecho || trabajando}
                   onClick={() => deshacer(m)}
-                  className={cn("mt-3 inline-flex min-h-14 items-center gap-2 rounded-lg border border-line px-4 text-[16px] font-semibold text-muted hover:border-red hover:text-red disabled:opacity-50", presion)}
+                  className="mt-2 inline-flex h-9 items-center gap-1.5 rounded-lg border border-line px-3 text-[12.5px] font-semibold text-muted transition hover:border-red hover:text-red disabled:opacity-50"
                 >
-                  <Undo2 className="size-5" aria-hidden /> {m.hecho.deshecho ? "Deshecho" : "Deshacer"}
+                  <Undo2 className="size-3.5" /> {m.hecho.deshecho ? "Deshecho" : "Deshacer"}
                 </button>
               )}
             </div>
           </div>
         ))}
         {trabajando && (
-          <p className="flex items-center gap-2 text-left text-[16px] text-muted">
-            <Loader2 className="size-5 animate-spin" aria-hidden /> Un momento…
+          <p className="flex items-center gap-2 text-[12.5px] text-muted">
+            <Loader2 className="size-3.5 animate-spin" /> Un momento…
           </p>
         )}
         <div ref={fin} />

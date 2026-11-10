@@ -1,10 +1,9 @@
+import { motion, AnimatePresence } from "framer-motion";
 import { ChevronDown, Eye, KeyRound, Loader2, LogIn, LogOut, ShieldCheck } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useAuth } from "../lib/auth";
 import { iniciales } from "../lib/format";
-import { cn } from "../lib/utils";
-import { Boton, presion } from "./ui";
-import { Ventana } from "./Ventana";
+import { Boton, Ventana } from "./ui";
 
 function Campo({
   id,
@@ -23,7 +22,7 @@ function Campo({
 }) {
   return (
     <div>
-      <label htmlFor={id} className="mb-1.5 block text-left text-[16px] font-semibold text-ink-2">
+      <label htmlFor={id} className="mb-1.5 block text-xs font-semibold text-muted">
         {etiqueta}
       </label>
       <input
@@ -33,7 +32,7 @@ function Campo({
         onChange={(e) => alCambiar(e.target.value)}
         required
         autoComplete={autoComplete}
-        className="h-14 w-full rounded-lg border border-line bg-surface px-4 text-[18px] outline-none focus:border-action focus:outline-2 focus:outline-offset-2 focus:outline-action"
+        className="h-12 w-full rounded-xl border border-line bg-surface px-3.5 text-sm outline-none focus:border-ink"
       />
     </div>
   );
@@ -60,17 +59,17 @@ export function EntrarDialog({ abierto, alCerrar }: { abierto: boolean; alCerrar
   }
 
   return (
-    <Ventana abierta={abierto} alCerrar={alCerrar} titulo="Entrar para registrar" subtitulo="Entra con la cuenta autorizada para registrar. Ver el stock no necesita cuenta.">
+    <Ventana abierta={abierto} alCerrar={alCerrar} titulo="Entrar para registrar" subtitulo="Ver el tablero no necesita cuenta. Registrar movimientos, sí.">
       <form onSubmit={enviar} className="space-y-4">
         <Campo id="entrar-email" etiqueta="Correo" tipo="email" valor={email} alCambiar={setEmail} autoComplete="email" />
         <Campo id="entrar-clave" etiqueta="Contraseña" tipo="password" valor={clave} alCambiar={setClave} autoComplete="current-password" />
         {error && (
-          <p role="alert" className="rounded-lg bg-red-soft px-4 py-3 text-[16px] font-medium leading-6 text-red">
+          <p role="alert" className="rounded-xl bg-red-soft px-3.5 py-2.5 text-[13px] font-medium text-red">
             {error}
           </p>
         )}
-        <Boton type="submit" variante="ink" className="min-h-16 w-full text-[18px]" disabled={cargando}>
-          {cargando ? <Loader2 className="size-5 animate-spin" aria-hidden /> : <LogIn className="size-5" aria-hidden />} Entrar
+        <Boton type="submit" variante="ink" className="h-12 w-full" disabled={cargando}>
+          {cargando ? <Loader2 className="size-4 animate-spin" /> : <LogIn className="size-4" />} Entrar
         </Boton>
       </form>
     </Ventana>
@@ -100,17 +99,17 @@ function ClaveDialog({ abierto, alCerrar, avisar }: { abierto: boolean; alCerrar
   }
 
   return (
-    <Ventana abierta={abierto} alCerrar={alCerrar} titulo="Cambiar contraseña" subtitulo="Cambia la contraseña con la que entras a registrar.">
+    <Ventana abierta={abierto} alCerrar={alCerrar} titulo="Cambiar contraseña">
       <form onSubmit={enviar} className="space-y-4">
         <Campo id="clave-nueva" etiqueta="Contraseña nueva (mínimo 8 caracteres)" tipo="password" valor={nueva} alCambiar={setNueva} autoComplete="new-password" />
         <Campo id="clave-repite" etiqueta="Repite la contraseña nueva" tipo="password" valor={repite} alCambiar={setRepite} autoComplete="new-password" />
         {error && (
-          <p role="alert" className="rounded-lg bg-red-soft px-4 py-3 text-[16px] font-medium leading-6 text-red">
+          <p role="alert" className="rounded-xl bg-red-soft px-3.5 py-2.5 text-[13px] font-medium text-red">
             {error}
           </p>
         )}
-        <Boton type="submit" variante="ink" className="min-h-16 w-full text-[18px]" disabled={cargando}>
-          {cargando ? <Loader2 className="size-5 animate-spin" aria-hidden /> : <KeyRound className="size-5" aria-hidden />} Guardar contraseña
+        <Boton type="submit" variante="ink" className="h-12 w-full" disabled={cargando}>
+          {cargando ? <Loader2 className="size-4 animate-spin" /> : <KeyRound className="size-4" />} Guardar contraseña
         </Boton>
       </form>
     </Ventana>
@@ -144,7 +143,7 @@ export function Cuenta({ avisar, puede, porSubir }: { avisar: (t: string) => voi
     return (
       <>
         <Boton onClick={() => setEntrando(true)}>
-          <LogIn className="size-5" aria-hidden /> Entrar
+          <LogIn className="size-4" /> Entrar
         </Boton>
         <EntrarDialog abierto={entrando} alCerrar={() => setEntrando(false)} />
       </>
@@ -159,21 +158,26 @@ export function Cuenta({ avisar, puede, porSubir }: { avisar: (t: string) => voi
         aria-haspopup="menu"
         aria-expanded={menu}
         disabled={saliendo}
-        className={cn("flex min-h-14 items-center gap-3 rounded-lg border border-line bg-surface pl-2 pr-4 text-[16px] font-semibold hover:bg-ground disabled:opacity-60", presion)}
+        className="flex h-10 items-center gap-2 rounded-xl border border-line bg-surface pl-1.5 pr-3 text-sm font-semibold transition hover:bg-ground disabled:opacity-60"
       >
-        <span className="grid size-10 place-items-center rounded-md bg-action text-[14px] font-semibold text-white">{saliendo ? <Loader2 className="size-5 animate-spin" aria-hidden /> : iniciales(email ?? "?")}</span>
-        <span className="max-w-[160px] truncate">{saliendo ? "Cerrando sesión…" : (email ?? "").split("@")[0]}</span>
-        <ChevronDown className={cn("size-5 text-faint transition-transform duration-150 ease-out", menu && "rotate-180")} aria-hidden />
+        <span className="grid size-7 place-items-center rounded-lg bg-ink text-[11px] font-semibold text-white">{saliendo ? <Loader2 className="size-3.5 animate-spin" /> : iniciales(email ?? "?")}</span>
+        <span className="hidden max-w-[120px] truncate sm:inline">{saliendo ? "Cerrando sesión…" : (email ?? "").split("@")[0]}</span>
+        <ChevronDown className="size-3.5 text-faint" />
       </button>
-      {menu && (
-          <div
+      <AnimatePresence>
+        {menu && (
+          <motion.div
             role="menu"
-            className="paso-entra absolute left-0 top-16 z-50 w-72 max-w-[calc(100vw-32px)] overflow-hidden rounded-lg border border-line bg-surface p-2"
+            initial={{ opacity: 0, y: -6, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -4 }}
+            transition={{ duration: 0.14 }}
+            className="absolute right-0 top-12 z-50 w-64 overflow-hidden rounded-2xl border border-line bg-surface p-1.5 shadow-pop"
           >
-            <div className="px-3 pb-2 pt-2">
-              <p className="truncate text-left text-[16px] font-semibold">{email}</p>
-              <p className="mt-1 flex items-start gap-2 text-left text-[14px] leading-5 text-muted">
-                {puede ? <ShieldCheck className="size-5 shrink-0 text-ok" aria-hidden /> : <Eye className="size-5 shrink-0" aria-hidden />}
+            <div className="px-3 pb-2 pt-2.5">
+              <p className="truncate text-[13px] font-semibold">{email}</p>
+              <p className="mt-1 inline-flex items-center gap-1.5 text-[12px] text-muted">
+                {puede ? <ShieldCheck className="size-3.5 text-ok" /> : <Eye className="size-3.5" />}
                 {puede ? "Puede registrar y anular" : "Solo lectura: tu correo no está autorizado"}
               </p>
             </div>
@@ -184,9 +188,9 @@ export function Cuenta({ avisar, puede, porSubir }: { avisar: (t: string) => voi
                 setMenu(false);
                 setClaveAbierta(true);
               }}
-              className="flex min-h-14 w-full items-center gap-3 rounded-md px-3 text-left text-[16px] font-semibold hover:bg-ground"
+              className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-[13.5px] font-semibold transition hover:bg-ground"
             >
-              <KeyRound className="size-5 text-muted" aria-hidden /> Cambiar contraseña
+              <KeyRound className="size-4 text-muted" /> Cambiar contraseña
             </button>
             <button
               role="menuitem"
@@ -196,21 +200,22 @@ export function Cuenta({ avisar, puede, porSubir }: { avisar: (t: string) => voi
                 if (porSubir > 0) setConfirmarSalida(true);
                 else void salir();
               }}
-              className="flex min-h-14 w-full items-center gap-3 rounded-md px-3 text-left text-[16px] font-semibold hover:bg-ground"
+              className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-[13.5px] font-semibold transition hover:bg-ground"
             >
-              <LogOut className="size-5 text-muted" aria-hidden /> Cerrar sesión
+              <LogOut className="size-4 text-muted" /> Cerrar sesión
             </button>
-          </div>
-      )}
+          </motion.div>
+        )}
+      </AnimatePresence>
       <ClaveDialog abierto={claveAbierta} alCerrar={() => setClaveAbierta(false)} avisar={avisar} />
       <Ventana abierta={confirmarSalida} alCerrar={() => setConfirmarSalida(false)} titulo="Tienes registros sin subir">
-        <p className="text-[18px] leading-[26px] text-ink-2">
+        <p className="text-[13.5px] leading-relaxed text-muted">
           {porSubir === 1 ? "Hay 1 registro" : `Hay ${porSubir} registros`} en este dispositivo que todavía no llegan al servidor. Si cierras sesión se quedan guardados aquí, pero solo se subirán cuando vuelvas a entrar con esta cuenta.
         </p>
-        <div className="mt-5 flex flex-col gap-3 sm:flex-row-reverse">
+        <div className="mt-4 flex flex-col gap-2 sm:flex-row-reverse">
           <Boton
             variante="ink"
-            className="sm:flex-1"
+            className="h-12 sm:flex-1"
             onClick={() => {
               setConfirmarSalida(false);
               void salir();
@@ -218,7 +223,7 @@ export function Cuenta({ avisar, puede, porSubir }: { avisar: (t: string) => voi
           >
             Cerrar sesión igual
           </Boton>
-          <Boton className="sm:flex-1" onClick={() => setConfirmarSalida(false)}>
+          <Boton className="h-12 sm:flex-1" onClick={() => setConfirmarSalida(false)}>
             Seguir con la sesión
           </Boton>
         </div>

@@ -1,25 +1,18 @@
 import { Loader2, Minus, Plus, X } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { mensajeServidor as mensaje } from "../lib/errores";
 import { entero, nombreProducto, titulo } from "../lib/format";
 import { useEnLinea } from "../lib/offline/conexion";
 import { supabase } from "../lib/supabase";
 import type { StockItem, Trabajador } from "../lib/types";
 import { cn } from "../lib/utils";
-import { CampoAutor, estiloCampo as campoBase, etiquetaCampo as etiquetaBase } from "./CampoAutor";
-import { PantallaFlujo } from "./FlujoRegistro";
+import { CampoAutor, estiloCampo, etiquetaCampo } from "./CampoAutor";
 import { CANTIDAD_INUSUAL, limpiarCantidad } from "./SelectorProducto";
-import { Boton, Chip, presion } from "./ui";
-import { Ventana } from "./Ventana";
-
-/** Campos de 56 px y texto de 18 px: se llenan con el pulgar y a pleno sol. */
-const estiloCampo = cn(campoBase, "h-14 rounded-lg px-4 text-[18px] transition-none focus:border-action focus:outline-2 focus:outline-offset-2 focus:outline-action");
-const etiquetaCampo = cn(etiquetaBase, "mb-2 text-left text-[16px] text-ink-2");
-const aviso = "rounded-lg px-4 py-3 text-[16px] font-medium leading-6";
+import { Boton, Chip, Ventana } from "./ui";
 
 /** Crear productos y trabajadores lo hace el servidor (él asigna los códigos), así que sin señal no se puede. */
 function AvisoConexion({ que }: { que: string }) {
-  return <p className={cn(aviso, "bg-warn-soft text-warn")}>{que} necesita conexión. Mientras tanto puedes registrar entradas y salidas de lo que ya existe.</p>;
+  return <p className="rounded-xl bg-warn-soft px-3.5 py-2.5 text-[13px] font-medium text-warn">{que} necesita conexión. Mientras tanto puedes registrar entradas y salidas de lo que ya existe.</p>;
 }
 
 const GRUPOS_TALLA: { texto: string; tallas: string[] }[] = [
@@ -36,54 +29,7 @@ type Comun = {
   autor: string;
   setAutor: (v: string) => void;
   pedirAutor: boolean;
-  /** Se abrió desde el registro: va a pantalla completa, con Atrás, en lugar de una ventana encima. */
-  enFlujo?: boolean;
-  /** Por subir está encima: esta pantalla queda oculta sin perder lo escrito. */
-  enPausa?: boolean;
 };
-
-/** Ventana cuando se abre suelto; pantalla completa cuando se abre en medio de un registro, que nunca lleva ventanas encima. */
-function Marco({
-  abierto,
-  alCerrar,
-  enFlujo = false,
-  enPausa = false,
-  titulo,
-  subtitulo,
-  pie,
-  children,
-}: {
-  abierto: boolean;
-  alCerrar: () => void;
-  enFlujo?: boolean;
-  enPausa?: boolean;
-  titulo: string;
-  subtitulo: string;
-  pie: ReactNode;
-  children: ReactNode;
-}) {
-  const encabezado = useRef<HTMLHeadingElement>(null);
-  useEffect(() => {
-    if (abierto && enFlujo && !enPausa) encabezado.current?.focus({ preventScroll: true });
-  }, [abierto, enFlujo, enPausa]);
-
-  if (!enFlujo) {
-    return (
-      <Ventana abierta={abierto} alCerrar={alCerrar} titulo={titulo} subtitulo={subtitulo} pie={pie}>
-        {children}
-      </Ventana>
-    );
-  }
-  return (
-    <PantallaFlujo abierta={abierto} oculta={enPausa} etiqueta={titulo} alAtras={alCerrar} claveContenido={titulo} pie={pie}>
-      <h1 ref={encabezado} tabIndex={-1} className="text-[24px] font-semibold leading-8 outline-none">
-        {titulo}
-      </h1>
-      <p className="mb-6 mt-1 text-left text-[16px] text-muted">{subtitulo}</p>
-      {children}
-    </PantallaFlujo>
-  );
-}
 
 export function NuevoProductoDialog({
   abierto,
@@ -95,8 +41,6 @@ export function NuevoProductoDialog({
   stock,
   inicial,
   alCrear,
-  enFlujo,
-  enPausa,
 }: Comun & {
   stock: StockItem[];
   inicial: { nombre?: string; empresa?: string } | null;
@@ -179,23 +123,21 @@ export function NuevoProductoDialog({
   }
 
   return (
-    <Marco
-      abierto={abierto}
+    <Ventana
+      abierta={abierto}
       alCerrar={alCerrar}
-      enFlujo={enFlujo}
-      enPausa={enPausa}
       titulo="Producto nuevo"
       subtitulo="Créalo una vez y ya queda disponible para registrar."
       pie={
-        <div className="space-y-3">
+        <div className="space-y-2">
           {!enLinea && <AvisoConexion que="Crear un producto" />}
           {error && (
-            <p role="alert" className={cn(aviso, "bg-red-soft text-red")}>
+            <p role="alert" className="rounded-xl bg-red-soft px-3.5 py-2.5 text-[13px] font-medium text-red">
               {error}
             </p>
           )}
-          <Boton type="submit" form="producto-form" variante="ink" className="min-h-16 w-full text-[18px]" disabled={!enLinea || !valido || enviando}>
-            {enviando && <Loader2 className="size-5 animate-spin" aria-hidden />} Crear producto
+          <Boton type="submit" form="producto-form" variante="ink" className="h-12 w-full" disabled={!enLinea || !valido || enviando}>
+            {enviando && <Loader2 className="size-4 animate-spin" />} Crear producto
           </Boton>
         </div>
       }
@@ -205,7 +147,7 @@ export function NuevoProductoDialog({
 
         <div>
           <p className={etiquetaCampo}>1. ¿De qué empresa es?</p>
-          <div className="flex flex-wrap gap-3">
+          <div className="flex flex-wrap gap-2">
             {empresas.map((e) => (
               <Chip
                 key={e}
@@ -225,7 +167,7 @@ export function NuevoProductoDialog({
                 setEmpresa("");
               }}
             >
-              <Plus className="size-5" aria-hidden /> Otra empresa
+              <Plus className="size-3.5" /> Otra empresa
             </Chip>
           </div>
           {otra && (
@@ -253,9 +195,9 @@ export function NuevoProductoDialog({
             placeholder="Ej: Casaca drill azul"
             className={estiloCampo}
           />
-          <p className="mt-1.5 text-[16px] leading-6 text-muted">Escribe el tipo y el color. La empresa no hace falta: ya la elegiste arriba.</p>
+          <p className="mt-1.5 text-[12px] text-faint">Escribe el tipo y el color. Sin la empresa: ya la elegiste arriba.</p>
           {yaExiste && (
-            <p className={cn(aviso, "mt-2 bg-warn-soft text-warn")}>
+            <p className="mt-2 rounded-xl bg-warn-soft px-3.5 py-2.5 text-[12.5px] text-warn">
               Ya existe «{nombreProducto(nom, emp)}» en {titulo(emp)}. Aquí solo se agregan tallas que le falten; para sumar unidades usa «Registrar».
             </p>
           )}
@@ -263,7 +205,7 @@ export function NuevoProductoDialog({
 
         <div>
           <p className={etiquetaCampo}>3. ¿Para quién es? (opcional)</p>
-          <div className="flex flex-wrap gap-3">
+          <div className="flex flex-wrap gap-2">
             {[
               ["", "No importa"],
               ["HOMBRE", "Hombre"],
@@ -279,11 +221,11 @@ export function NuevoProductoDialog({
 
         <div>
           <p className={etiquetaCampo}>4. ¿En qué tallas viene?</p>
-          <div className="space-y-4">
+          <div className="space-y-3">
             {GRUPOS_TALLA.map((g) => (
               <div key={g.texto}>
-                <p className="mb-2 text-left text-[14px] font-semibold text-faint">{g.texto}</p>
-                <div className="flex flex-wrap gap-3">
+                <p className="mb-1.5 text-[11.5px] font-semibold text-faint">{g.texto}</p>
+                <div className="flex flex-wrap gap-2">
                   {g.tallas.map((t) => (
                     <Chip key={`${g.texto}-${t}`} activo={tallas.includes(t)} onClick={() => alternar(t)}>
                       {t === "ÚNICA" ? "Talla única" : t}
@@ -292,7 +234,7 @@ export function NuevoProductoDialog({
                 </div>
               </div>
             ))}
-            <div className="flex gap-3">
+            <div className="flex gap-2">
               <input
                 value={propia}
                 onChange={(e) => setPropia(e.target.value)}
@@ -305,9 +247,9 @@ export function NuevoProductoDialog({
                 maxLength={24}
                 placeholder="¿Otra talla? Escríbela (ej: 3XL, 10)"
                 aria-label="Otra talla"
-                className={estiloCampo}
+                className={cn(estiloCampo, "h-11")}
               />
-              <Boton type="button" className="shrink-0" onClick={agregarPropia} disabled={!propia.trim()}>
+              <Boton type="button" className="h-11 shrink-0" onClick={agregarPropia} disabled={!propia.trim()}>
                 Agregar
               </Boton>
             </div>
@@ -317,18 +259,18 @@ export function NuevoProductoDialog({
         {tallas.length > 0 && (
           <div>
             <p className={etiquetaCampo}>5. ¿Cuántas unidades tienes ahora de cada talla? (opcional)</p>
-            <ul className="divide-y divide-line-2 overflow-hidden rounded-lg border border-line">
+            <ul className="divide-y divide-line-2 overflow-hidden rounded-2xl border border-line">
               {tallas.map((t, i) => (
-                <li key={t} className="flex flex-wrap items-center gap-3 px-4 py-3">
-                  <span className="min-w-0 flex-1 text-[18px] font-semibold">{t === "ÚNICA" ? "Talla única" : `Talla ${t}`}</span>
-                  <div className="flex h-14 items-stretch overflow-hidden rounded-lg border border-line focus-within:border-action">
+                <li key={t} className="flex items-center gap-3 px-4 py-2.5">
+                  <span className="min-w-0 flex-1 text-[13.5px] font-semibold">{t === "ÚNICA" ? "Talla única" : `Talla ${t}`}</span>
+                  <div className="flex h-10 items-stretch overflow-hidden rounded-xl border border-line focus-within:border-ink">
                     <button
                       type="button"
                       aria-label={`Quitar una unidad de ${t}`}
                       onClick={() => ponerCant(t, String(Math.max(0, cantidades[i] - 1)))}
-                      className={cn("grid w-14 place-items-center text-ink hover:bg-ground", presion)}
+                      className="grid w-10 place-items-center text-muted transition hover:bg-ground hover:text-ink"
                     >
-                      <Minus className="size-5" aria-hidden />
+                      <Minus className="size-4" />
                     </button>
                     <input
                       inputMode="numeric"
@@ -336,24 +278,24 @@ export function NuevoProductoDialog({
                       value={cants[t] ?? ""}
                       placeholder="0"
                       onChange={(e) => ponerCant(t, e.target.value)}
-                      className="num w-16 bg-transparent text-center text-[20px] font-semibold outline-none"
+                      className="num w-12 bg-transparent text-center text-[15px] font-semibold outline-none"
                     />
                     <button
                       type="button"
                       aria-label={`Agregar una unidad de ${t}`}
                       onClick={() => ponerCant(t, String(cantidades[i] + 1))}
-                      className={cn("grid w-14 place-items-center text-ink hover:bg-ground", presion)}
+                      className="grid w-10 place-items-center text-muted transition hover:bg-ground hover:text-ink"
                     >
-                      <Plus className="size-5" aria-hidden />
+                      <Plus className="size-4" />
                     </button>
                   </div>
                   <button
                     type="button"
                     aria-label={`Quitar la talla ${t}`}
                     onClick={() => alternar(t)}
-                    className="grid size-14 place-items-center rounded-lg text-muted hover:bg-ground hover:text-ink"
+                    className="grid size-8 place-items-center rounded-lg text-faint transition hover:bg-ground hover:text-ink"
                   >
-                    <X className="size-5" aria-hidden />
+                    <X className="size-4" />
                   </button>
                 </li>
               ))}
@@ -362,7 +304,7 @@ export function NuevoProductoDialog({
         )}
 
         {valido && (
-          <p className="rounded-lg bg-ground px-4 py-3 text-[16px] leading-6 text-ink-2">
+          <p className="rounded-xl bg-ground px-3.5 py-3 text-[13px] leading-relaxed text-muted">
             Se creará <b className="text-ink">{nombreProducto(nom, emp)}</b> en <b className="text-ink">{titulo(emp)}</b> con {tallas.length}{" "}
             {tallas.length === 1 ? "talla" : "tallas"}
             {unidades > 0 ? (
@@ -376,12 +318,13 @@ export function NuevoProductoDialog({
           </p>
         )}
         {hayInusual && inusualVisto && (
-          <p role="alert" className={cn(aviso, "bg-warn-soft text-warn")}>
+          <p role="alert" className="rounded-xl bg-warn-soft px-3.5 py-3 text-justify text-[13px] font-medium text-warn">
             Hay una talla con {entero(CANTIDAD_INUSUAL)} unidades o más. Revisa el número y, si está bien, pulsa Crear producto otra vez.
           </p>
         )}
+
       </form>
-    </Marco>
+    </Ventana>
   );
 }
 
@@ -395,8 +338,6 @@ export function NuevoTrabajadorDialog({
   trabajadores,
   inicial,
   alCrear,
-  enFlujo,
-  enPausa,
 }: Comun & {
   trabajadores: Trabajador[];
   /** Lo que la persona ya había escrito en el buscador. */
@@ -457,23 +398,21 @@ export function NuevoTrabajadorDialog({
   }
 
   return (
-    <Marco
-      abierto={abierto}
+    <Ventana
+      abierta={abierto}
       alCerrar={alCerrar}
-      enFlujo={enFlujo}
-      enPausa={enPausa}
       titulo="Trabajador nuevo"
-      subtitulo="Agrégalo una vez y ya aparece al entregar algo."
+      subtitulo="Aparecerá en la lista al registrar una salida."
       pie={
-        <div className="space-y-3">
+        <div className="space-y-2">
           {!enLinea && <AvisoConexion que="Agregar un trabajador" />}
           {error && (
-            <p role="alert" className={cn(aviso, "bg-red-soft text-red")}>
+            <p role="alert" className="rounded-xl bg-red-soft px-3.5 py-2.5 text-[13px] font-medium text-red">
               {error}
             </p>
           )}
-          <Boton type="submit" form="trabajador-form" variante="ink" className="min-h-16 w-full text-[18px]" disabled={!enLinea || !valido || enviando}>
-            {enviando && <Loader2 className="size-5 animate-spin" aria-hidden />} Agregar trabajador
+          <Boton type="submit" form="trabajador-form" variante="ink" className="h-12 w-full" disabled={!enLinea || !valido || enviando}>
+            {enviando && <Loader2 className="size-4 animate-spin" />} Agregar trabajador
           </Boton>
         </div>
       }
@@ -496,7 +435,7 @@ export function NuevoTrabajadorDialog({
         </div>
         <div>
           <p className={etiquetaCampo}>¿Hombre o mujer? (para filtrar los productos)</p>
-          <div className="flex flex-wrap gap-3">
+          <div className="flex flex-wrap gap-2">
             {[
               ["HOMBRE", "Hombre"],
               ["MUJER", "Mujer"],
@@ -509,7 +448,7 @@ export function NuevoTrabajadorDialog({
         </div>
         <div>
           <p className={etiquetaCampo}>Área</p>
-          <div className="flex flex-wrap gap-3">
+          <div className="flex flex-wrap gap-2">
             {areas.map((a) => (
               <Chip
                 key={a}
@@ -529,13 +468,13 @@ export function NuevoTrabajadorDialog({
                 setArea("");
               }}
             >
-              <Plus className="size-5" aria-hidden /> Otra área
+              <Plus className="size-3.5" /> Otra área
             </Chip>
           </div>
           {otra && <input value={area} onChange={(e) => setArea(e.target.value)} maxLength={40} placeholder="Nombre del área" aria-label="Nombre del área" className={cn(estiloCampo, "mt-3")} />}
         </div>
-        {repetido && <p className={cn(aviso, "bg-warn-soft text-warn")}>{titulo(completo)} ya está en la lista.</p>}
+        {repetido && <p className="rounded-xl bg-warn-soft px-3.5 py-2.5 text-[12.5px] text-warn">{titulo(completo)} ya está en la lista.</p>}
       </form>
-    </Marco>
+    </Ventana>
   );
 }

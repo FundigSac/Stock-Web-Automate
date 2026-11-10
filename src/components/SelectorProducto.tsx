@@ -1,10 +1,10 @@
-import { Minus, Plus, Search, TriangleAlert, X } from "lucide-react";
-import { useId, useMemo, useState } from "react";
+import { Minus, Plus, Search, Undo2, X } from "lucide-react";
+import { useMemo, useState } from "react";
 import type { GrupoProducto } from "../lib/derive";
 import { entero, etiquetaTalla, norm, nombreProducto, nombreTallaEn, titulo } from "../lib/format";
 import type { StockItem } from "../lib/types";
 import { cn } from "../lib/utils";
-import { BOTON_SECUNDARIO, CAMPO, ETIQUETA } from "./FlujoRegistro";
+import { estiloCampo, etiquetaCampo } from "./CampoAutor";
 import { Chip } from "./ui";
 
 /** Producto elegido y las unidades puestas en cada talla (por codigo). */
@@ -33,27 +33,28 @@ export function lineasDe(grupos: GrupoProducto[], sel: Sel, suma: boolean): Line
     .map((l) => ({ ...l, quedaria: l.t.queda + (suma ? l.n : -l.n) }));
 }
 
-const unidadesTexto = (n: number) => `${entero(n)} ${n === 1 ? "unidad" : "unidades"}`;
-
-/** Cifra con el signo menos tipográfico, igual que el "−2" de las salidas. */
-export const conSigno = (n: number) => (n < 0 ? `−${entero(-n)}` : entero(n));
-
-/** Filtro por género de quien recibe: solo salen sus productos y los equipos de seguridad. */
-export type FiltroGenero = { valor: "HOMBRE" | "MUJER"; verTodo: boolean; alVerTodo: () => void } | null;
-
-/** Buscador y lista de productos en filas de 64 px. */
-export function ListaProductos({
-  idCampo,
+export function SelectorProducto({
+  titulo: encabezado,
+  ayuda,
+  suma,
   grupos,
   genero,
-  alElegir,
+  valor,
+  onChange,
   nuevoProducto,
+  idCampo,
 }: {
-  idCampo: string;
+  titulo: string;
+  ayuda: string;
+  /** true: las unidades se suman al stock (entrada); false: se restan (salida). */
+  suma: boolean;
   grupos: GrupoProducto[];
-  genero: FiltroGenero;
-  alElegir: (g: GrupoProducto) => void;
+  /** Si hay, solo salen productos de ese genero (y los equipos de seguridad). */
+  genero: { valor: "HOMBRE" | "MUJER"; verTodo: boolean; alVerTodo: () => void } | null;
+  valor: Sel;
+  onChange: (v: Sel) => void;
   nuevoProducto?: (i: { nombre?: string; empresa?: string }) => void;
+  idCampo: string;
 }) {
   const [q, setQ] = useState("");
   const [empresaF, setEmpresaF] = useState("TODAS");
@@ -73,214 +74,155 @@ export function ListaProductos({
       .sort((a, b) => a.producto.localeCompare(b.producto, "es"));
   }, [q, grupos, empresaF, filtraGenero, genero]);
 
+  const grupo = grupos.find((g) => g.clave === valor.clave) ?? null;
+  const poner = (codigo: string, v: string) => onChange({ ...valor, cants: { ...valor.cants, [codigo]: limpiarCantidad(v) } });
+  const sumar = (codigo: string, d: number) => poner(codigo, String(Math.max(0, (Number.parseInt(valor.cants[codigo] ?? "", 10) || 0) + d)));
+
+  if (grupo) {
+    return (
+      <div className="rounded-2xl border border-line p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-faint">{encabezado}</p>
+            <p className="mt-1 text-[14.5px] font-semibold leading-snug">{nombreProducto(grupo.producto, grupo.empresa)}</p>
+            <p className="mt-0.5 text-[12px] text-muted">
+              {titulo(grupo.empresa)}
+              {grupo.genero ? ` · ${titulo(grupo.genero)}` : ""}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => onChange(SEL_VACIA)}
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2 py-1 text-[12.5px] font-semibold text-muted transition hover:bg-ground hover:text-ink"
+          >
+            <Undo2 className="size-3.5" /> Cambiar
+          </button>
+        </div>
+
+        <p className={cn(etiquetaCampo, "mb-2 mt-5")}>{ayuda}</p>
+        <ul className="divide-y divide-line-2 overflow-hidden rounded-2xl border border-line">
+          {grupo.tallas.map((t) => {
+            const n = Number.parseInt(valor.cants[t.codigo] ?? "", 10) || 0;
+            return (
+              <li key={t.codigo} className={cn("flex items-center gap-3 px-3.5 py-2.5 transition", n > 0 && "bg-ground/70")}>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[14px] font-semibold">{etiquetaTalla(nombreTallaEn(t.talla, grupo.tallas))}</p>
+                  <p className={cn("num text-[11.5px]", t.queda <= 0 ? "text-red" : "text-muted")}>{t.queda <= 0 ? "No hay stock" : `Hay ${entero(t.queda)}`}</p>
+                </div>
+                <div className="flex h-11 items-stretch overflow-hidden rounded-xl border border-line bg-surface focus-within:border-ink">
+                  <button
+                    type="button"
+                    aria-label={`Quitar una unidad (${etiquetaTalla(t.talla)})`}
+                    onClick={() => sumar(t.codigo, -1)}
+                    className="grid w-11 place-items-center text-muted transition hover:bg-ground hover:text-ink active:bg-ground"
+                  >
+                    <Minus className="size-4" />
+                  </button>
+                  <input
+                    inputMode="numeric"
+                    aria-label={`Unidades (${etiquetaTalla(t.talla)})`}
+                    value={valor.cants[t.codigo] ?? ""}
+                    placeholder="0"
+                    onChange={(e) => poner(t.codigo, e.target.value)}
+                    className="num w-12 min-w-0 bg-transparent text-center text-[16px] font-semibold outline-none"
+                  />
+                  <button
+                    type="button"
+                    aria-label={`Agregar una unidad (${etiquetaTalla(t.talla)})`}
+                    onClick={() => sumar(t.codigo, 1)}
+                    className="grid w-11 place-items-center text-muted transition hover:bg-ground hover:text-ink active:bg-ground"
+                  >
+                    <Plus className="size-4" />
+                  </button>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+        <p className="mt-2 text-[11.5px] text-faint">{suma ? "Estas unidades se suman al stock." : "Estas unidades se restan del stock."}</p>
+      </div>
+    );
+  }
+
   return (
     <div>
-      <label htmlFor={idCampo} className={ETIQUETA}>
-        Busca por nombre, talla o código
+      <label htmlFor={idCampo} className={etiquetaCampo}>
+        {encabezado}
       </label>
+      <div className="sin-barra -mx-1 mb-2.5 flex gap-2 overflow-x-auto px-1 pb-1">
+        {["TODAS", ...empresas].map((e) => (
+          <Chip key={e} activo={empresaF === e} onClick={() => setEmpresaF(e)}>
+            {e === "TODAS" ? "Todas" : titulo(e)}
+          </Chip>
+        ))}
+      </div>
       <div className="relative">
-        <Search className="pointer-events-none absolute left-4 top-1/2 size-5 -translate-y-1/2 text-faint" aria-hidden />
-        <input id={idCampo} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Por ejemplo: casaca, botas, 42" autoComplete="off" className={cn(CAMPO, "pl-12", q && "pr-14")} />
+        <Search className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-faint" />
+        <input
+          id={idCampo}
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Ej: casaca, polo, botas, 42…"
+          autoComplete="off"
+          className={cn(estiloCampo, "pl-10", q && "pr-10")}
+        />
         {q && (
-          <button type="button" onClick={() => setQ("")} aria-label="Borrar búsqueda" className="absolute right-0 top-0 grid size-14 place-items-center rounded-md text-faint hover:text-ink">
-            <X className="size-5" aria-hidden />
+          <button
+            type="button"
+            onClick={() => setQ("")}
+            aria-label="Borrar búsqueda"
+            className="absolute right-2 top-1/2 grid size-8 -translate-y-1/2 place-items-center rounded-lg text-faint transition hover:bg-ground hover:text-ink"
+          >
+            <X className="size-4" />
           </button>
         )}
       </div>
-
-      {empresas.length > 1 && (
-        <div className="sin-barra -mx-4 mt-3 flex gap-3 overflow-x-auto px-4 pb-1">
-          {["TODAS", ...empresas].map((e) => (
-            <Chip key={e} activo={empresaF === e} onClick={() => setEmpresaF(e)} className="text-[16px]">
-              {e === "TODAS" ? "Todas las empresas" : titulo(e)}
-            </Chip>
-          ))}
-        </div>
-      )}
-
-      <p className="num mt-3 text-left text-[16px] text-muted">
+      <p className="mb-1 mt-2 text-[11.5px] text-faint">
         {resultados.length === 0 ? "Sin resultados" : `${entero(resultados.length)} ${resultados.length === 1 ? "producto" : "productos"}`}
-        {filtraGenero && ` para ${genero!.valor === "MUJER" ? "mujer" : "hombre"} y equipos de seguridad`}
+        {filtraGenero && (
+          <>
+            {" "}· para {genero!.valor === "MUJER" ? "mujer" : "hombre"} y equipos de seguridad ·{" "}
+            <button type="button" onClick={genero!.alVerTodo} className="font-semibold text-ink underline-offset-2 hover:underline">
+              ver todos
+            </button>
+          </>
+        )}
       </p>
-
       {resultados.length === 0 ? (
-        <p className="mt-2 rounded-lg bg-surface px-4 py-3 text-[16px] text-muted">No encontré ese producto. Prueba con otra palabra o cambia la empresa.</p>
+        <p className="rounded-xl bg-ground px-3.5 py-3 text-[13px] text-muted">No encontré ese producto. Prueba con otra palabra o cambia la empresa.</p>
       ) : (
-        <ul className="mt-2 divide-y divide-line-2 overflow-hidden rounded-lg border border-line bg-surface">
+        <ul className="max-h-60 divide-y divide-line-2 overflow-y-auto overscroll-contain rounded-2xl border border-line">
           {resultados.map((g) => (
             <li key={g.clave}>
               <button
                 type="button"
                 onClick={() => {
-                  alElegir(g);
+                  onChange({ clave: g.clave, cants: {} });
                   setQ("");
                 }}
-                className="flex min-h-16 w-full items-center gap-3 px-4 py-2 text-left transition-colors hover:bg-ground active:bg-ground"
+                className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition hover:bg-ground active:bg-ground"
               >
-                <span className="min-w-0 flex-1">
-                  <span className="line-clamp-2 text-[18px] font-semibold leading-6 [overflow-wrap:anywhere]">{nombreProducto(g.producto, g.empresa)}</span>
-                  <span className="block truncate text-[16px] leading-6 text-muted">
+                <span className="min-w-0">
+                  <span className="block truncate text-[13.5px] font-semibold">{nombreProducto(g.producto, g.empresa)}</span>
+                  <span className="block truncate text-[12px] text-muted">
                     {titulo(g.empresa)}
                     {g.genero ? ` · ${titulo(g.genero)}` : ""} · {g.tallas.length} {g.tallas.length === 1 ? "talla" : "tallas"}
                   </span>
                 </span>
-                <span className="num shrink-0 text-right text-[16px] text-muted">{entero(g.unidades)} uds</span>
+                <span className="num shrink-0 text-[12px] text-muted">{entero(g.unidades)} uds</span>
               </button>
             </li>
           ))}
         </ul>
       )}
-
-      {filtraGenero && (
-        <button type="button" onClick={genero!.alVerTodo} className={cn(BOTON_SECUNDARIO, "mt-3")}>
-          Ver todos los productos
-        </button>
-      )}
       {nuevoProducto && (
-        <button type="button" onClick={() => nuevoProducto({ nombre: q.trim(), empresa: empresaF })} className={cn(BOTON_SECUNDARIO, "mt-3 border-dashed")}>
-          <Plus className="size-5" aria-hidden /> ¿No está? Crear producto nuevo
+        <button
+          type="button"
+          onClick={() => nuevoProducto({ nombre: q.trim(), empresa: empresaF })}
+          className="mt-2.5 inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-dashed border-faint/70 text-[13px] font-semibold text-ink transition hover:bg-ground"
+        >
+          <Plus className="size-4" /> ¿No está? Crear producto nuevo
         </button>
-      )}
-    </div>
-  );
-}
-
-/** El producto ya elegido, con la opción de cambiarlo. */
-export function ProductoElegido({ grupo, alCambiar }: { grupo: GrupoProducto; alCambiar: () => void }) {
-  return (
-    <div className="flex items-center gap-3 rounded-lg border border-line bg-surface py-2 pl-4 pr-2">
-      <div className="min-w-0 flex-1">
-        <p className="text-left text-[18px] font-semibold leading-6">{nombreProducto(grupo.producto, grupo.empresa)}</p>
-        <p className="text-left text-[16px] leading-6 text-muted">
-          {titulo(grupo.empresa)}
-          {grupo.genero ? ` · ${titulo(grupo.genero)}` : ""}
-        </p>
-      </div>
-      <button
-        type="button"
-        onClick={alCambiar}
-        aria-label="Elegir otro producto"
-        className="inline-flex min-h-14 shrink-0 items-center rounded-md px-3 text-[16px] font-semibold text-action underline underline-offset-4 hover:bg-ground"
-      >
-        Cambiar
-      </button>
-    </div>
-  );
-}
-
-/**
- * Talla en botones de 56 px y cantidad con − y + de 64 px. Cada talla guarda su propia cantidad,
- * así un mismo registro puede llevar varias tallas.
- */
-export function CantidadPorTalla({ grupo, valor, onChange, suma }: { grupo: GrupoProducto; valor: Sel; onChange: (v: Sel) => void; suma: boolean }) {
-  const tallas = grupo.tallas;
-  const cuantas = (codigo: string) => Number.parseInt(valor.cants[codigo] ?? "", 10) || 0;
-  const [activa, setActiva] = useState<string | null>(() => (tallas.length === 1 ? tallas[0].codigo : (tallas.find((t) => cuantas(t.codigo) > 0)?.codigo ?? null)));
-  const idTalla = useId();
-  const t = tallas.find((x) => x.codigo === activa) ?? null;
-
-  const poner = (codigo: string, v: string) => onChange({ ...valor, cants: { ...valor.cants, [codigo]: limpiarCantidad(v) } });
-  const sumar = (codigo: string, d: number) => poner(codigo, String(Math.max(0, cuantas(codigo) + d)));
-
-  const conUnidades = tallas.filter((x) => cuantas(x.codigo) > 0);
-  const total = conUnidades.reduce((a, x) => a + cuantas(x.codigo), 0);
-  const n = t ? cuantas(t.codigo) : 0;
-  const quedaria = t ? t.queda + (suma ? n : -n) : 0;
-
-  return (
-    <div>
-      {tallas.length > 1 && (
-        <>
-          <p id={idTalla} className="text-left text-[18px] font-semibold">
-            Talla
-          </p>
-          <div role="radiogroup" aria-labelledby={idTalla} className="mt-2 flex flex-wrap gap-3">
-            {tallas.map((x) => {
-              const c = cuantas(x.codigo);
-              const elegida = x.codigo === activa;
-              return (
-                <button
-                  key={x.codigo}
-                  type="button"
-                  role="radio"
-                  aria-checked={elegida}
-                  aria-label={`${etiquetaTalla(nombreTallaEn(x.talla, tallas))}${c > 0 ? `, ${unidadesTexto(c)}` : ""}${x.queda <= 0 ? ", sin stock" : ""}`}
-                  onClick={() => setActiva(x.codigo)}
-                  className={cn(
-                    "flex h-14 min-w-14 flex-col items-center justify-center rounded-md border-2 px-3 text-[18px] font-semibold leading-5 transition-transform duration-100 active:scale-[0.98] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-action",
-                    elegida ? "border-action bg-action text-white" : c > 0 ? "border-action bg-surface text-action" : "border-line bg-surface text-ink",
-                  )}
-                >
-                  <span>{nombreTallaEn(x.talla, tallas)}</span>
-                  {c > 0 && (
-                    <span className="num text-[14px] leading-4">
-                      {suma ? "+" : "−"}
-                      {entero(c)}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        </>
-      )}
-
-      {t ? (
-        <div className={tallas.length > 1 ? "mt-6" : undefined}>
-          <p className="text-left text-[18px] font-semibold">{etiquetaTalla(nombreTallaEn(t.talla, tallas))}</p>
-          <p className={cn("num text-left text-[16px]", t.queda <= 0 ? "text-red" : "text-muted")}>{t.queda <= 0 ? "No hay stock" : `Hay ${entero(t.queda)}`}</p>
-          <div className="mt-3 flex items-center gap-3">
-            <button
-              type="button"
-              aria-label={`Quitar una unidad (${etiquetaTalla(t.talla)})`}
-              onClick={() => sumar(t.codigo, -1)}
-              className="grid size-16 shrink-0 place-items-center rounded-md border-2 border-line bg-surface text-ink transition-transform duration-100 active:scale-[0.98] focus-visible:outline-2 focus-visible:outline-action"
-            >
-              <Minus className="size-7" aria-hidden />
-            </button>
-            <input
-              inputMode="numeric"
-              aria-label={`Unidades (${etiquetaTalla(t.talla)})`}
-              value={valor.cants[t.codigo] ?? ""}
-              placeholder="0"
-              onChange={(e) => poner(t.codigo, e.target.value)}
-              className="num h-16 w-full min-w-0 flex-1 rounded-md border border-line bg-surface text-center text-[40px]! font-semibold leading-none text-ink outline-none focus:border-action"
-            />
-            <button
-              type="button"
-              aria-label={`Agregar una unidad (${etiquetaTalla(t.talla)})`}
-              onClick={() => sumar(t.codigo, 1)}
-              className="grid size-16 shrink-0 place-items-center rounded-md border-2 border-action bg-surface text-action transition-transform duration-100 active:scale-[0.98] focus-visible:outline-2 focus-visible:outline-action"
-            >
-              <Plus className="size-7" aria-hidden />
-            </button>
-          </div>
-          {n > 0 &&
-            (quedaria < 0 ? (
-              <p className="mt-3 flex items-start gap-2 text-left text-[16px] font-semibold text-red">
-                <TriangleAlert className="mt-0.5 size-5 shrink-0" aria-hidden />
-                <span className="num">Quedarían {conSigno(quedaria)}. Es más de lo que hay en stock.</span>
-              </p>
-            ) : (
-              <p className="num mt-3 text-left text-[16px] text-muted">
-                {quedaria === 1 ? "Quedará 1" : `Quedarán ${entero(quedaria)}`} en stock.
-              </p>
-            ))}
-          {n >= CANTIDAD_INUSUAL && (
-            <p className="mt-2 flex items-start gap-2 text-left text-[16px] font-semibold text-warn">
-              <TriangleAlert className="mt-0.5 size-5 shrink-0" aria-hidden />
-              <span>Son muchas unidades para una talla. Revisa el número.</span>
-            </p>
-          )}
-        </div>
-      ) : (
-        <p className="mt-6 text-left text-[16px] text-muted">Elige la talla.</p>
-      )}
-
-      {tallas.length > 1 && conUnidades.length > 1 && (
-        <p className="num mt-5 border-t border-line-2 pt-4 text-left text-[16px] text-muted">
-          En total: {unidadesTexto(total)} en {conUnidades.length} tallas.
-        </p>
       )}
     </div>
   );
