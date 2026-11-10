@@ -854,3 +854,30 @@ test.describe("sin service worker, una pantalla que no llega", () => {
     await expect(page.getByRole("heading", { name: "Esta parte de la app necesita conexión" })).toBeVisible();
   });
 });
+
+test.describe("entrada Línea de flujo", () => {
+  test("se ve una vez por sesión, se retira sola y no bloquea el primer toque", async ({ context, page }) => {
+    const sb = new Falso();
+    await sb.conectar(context);
+    // La línea dura 0,9 s desde el primer pintado: se revisa antes de que termine de cargar la página.
+    await page.goto("/", { waitUntil: "commit" });
+    await expect(page.locator("html")).toHaveAttribute("data-intro", "", { timeout: 1000 });
+    expect(await page.locator(".fx-flow-line").evaluate((e) => getComputedStyle(e).pointerEvents)).toBe("none");
+    await expect(page.locator("html")).not.toHaveAttribute("data-intro", /.*/, { timeout: 2500 });
+    await expect(page.locator(".fx-flow-line")).toBeHidden();
+    await page.reload();
+    await expect(estado(page, /En línea/)).toBeVisible();
+    await expect(page.locator("html")).not.toHaveAttribute("data-intro", /.*/);
+  });
+
+  test("con movimiento reducido no aparece", async ({ browser }) => {
+    const context = await browser.newContext({ reducedMotion: "reduce" });
+    const sb = new Falso();
+    await sb.conectar(context);
+    const page = await context.newPage();
+    await page.goto("/");
+    await expect(page.locator("html")).not.toHaveAttribute("data-intro", /.*/);
+    await expect(page.locator(".fx-flow-line")).toBeHidden();
+    await context.close();
+  });
+});

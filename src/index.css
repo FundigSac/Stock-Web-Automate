@@ -171,3 +171,25 @@ button.registrar-opcion:active:not(:disabled) {
 
 .sin-barra { scrollbar-width: none; }
 .sin-barra::-webkit-scrollbar { display: none; }
+
+/* Entrada "Línea de flujo" (Report/04-design-decisions.md): 0,9 s, una vez por sesión, sin bloquear nada.
+   Sin JS o con movimiento reducido la capa no existe. Solo anima transform y opacity. */
+.fx-flow-line { display: none; }
+html[data-intro] .fx-flow-line {
+  display: block;
+  position: fixed;
+  top: 56px;
+  left: 0;
+  right: 0;
+  height: 3px;
+  z-index: 56;
+  pointer-events: none;
+  background: var(--color-action);
+  transform-origin: left;
+  animation:
+    fx-flow 600ms cubic-bezier(0.16, 1, 0.3, 1) backwards,
+    fx-out 200ms cubic-bezier(0.4, 0, 1, 1) 700ms forwards;
+}
+@keyframes fx-flow { from { transform: scaleX(0); } }
+@keyframes fx-out { to { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .fx-flow-line { display: none !important; } }
