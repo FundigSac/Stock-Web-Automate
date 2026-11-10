@@ -1,6 +1,7 @@
 import { motion } from "framer-motion";
 import { AlertTriangle, ArrowDown, ArrowUp, ChevronsUpDown, CircleSlash, LayoutGrid, List, Package, PackagePlus, Plus, Search } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { BarraSalud } from "../components/BarraSalud";
 import { Card, Chip, ESTADO_ICONO, EstadoBadge, Tabla, Vacio, td, th } from "../components/ui";
 import { agruparProductos, ESTADO_TEXTO, estadoDe, estadoProducto, GRAVEDAD, rangoTalla, resumir, textoEstadoProducto } from "../lib/derive";
 import { entero, fechaLarga, norm, nombreProducto, nombreTallaEn, titulo } from "../lib/format";
@@ -19,6 +20,18 @@ const CHIP_TALLA: Record<Estado, string> = {
 };
 
 type Orden = { col: Col; asc: boolean };
+
+const NOMBRE_COL: Record<Col, string> = { empresa: "empresa", producto: "producto", talla: "talla", queda: "unidades que quedan", estado: "estado", ultimo: "último movimiento" };
+
+function sentidoOrden({ col, asc }: Orden): string {
+  if (col === "queda") return asc ? "de menos a más" : "de más a menos";
+  if (col === "estado") return asc ? "lo más urgente primero" : "lo más urgente al final";
+  if (col === "ultimo") return asc ? "del más antiguo al más reciente" : "del más reciente al más antiguo";
+  return asc ? "de la A a la Z" : "de la Z a la A";
+}
+
+// B6-2: la entrada escalonada solo en la primera carga de la sesión. Al filtrar, ordenar o volver a la vista, todo aparece sin esperar.
+let escalonado = { productos: false, lista: false };
 
 function Cabecera({ col, children, derecha, orden, alOrdenar }: { col: Col; children: string; derecha?: boolean; orden: Orden; alOrdenar: (f: (o: Orden) => Orden) => void }) {
   const activo = orden.col === col;
@@ -41,6 +54,11 @@ export function Stock({ datos, minimo, abrirProducto, filtroEstado, setFiltroEst
   const [q, setQ] = useState("");
   const [modo, setModo] = useState<"productos" | "lista">("productos");
   const [orden, setOrden] = useState<{ col: Col; asc: boolean }>({ col: "producto", asc: true });
+  // Solo lo que se monta en el primer dibujo de cada modo entra escalonado; lo que aparece después (al filtrar) no.
+  const animar = !escalonado[modo];
+  useEffect(() => {
+    escalonado = { ...escalonado, [modo]: true };
+  }, [modo]);
 
   const r = useMemo(() => resumir(datos.stock, minimo), [datos.stock, minimo]);
   const todosGrupos = useMemo(() => agruparProductos(datos.stock, minimo), [datos.stock, minimo]);
@@ -83,6 +101,9 @@ export function Stock({ datos, minimo, abrirProducto, filtroEstado, setFiltroEst
       return c * dir || a.codigo.localeCompare(b.codigo);
     });
   }, [filtrados, orden, minimo]);
+
+  // La suma de la columna "Queda" tal como se ve: si una talla quedó en negativo, también resta aquí.
+  const totalQueda = useMemo(() => lista.reduce((t, s) => t + s.queda, 0), [lista]);
 
   const cuenta = (e: Estado) => (e === "ok" ? r.ok : e === "bajo" ? r.bajo : e === "sin" ? r.sin : r.revisar);
 
@@ -176,6 +197,7 @@ export function Stock({ datos, minimo, abrirProducto, filtroEstado, setFiltroEst
             ))}
           </div>
         </div>
+        <BarraSalud r={r} minimo={minimo} filtro={filtroEstado} alFiltrar={setFiltroEstado} />
         <div className="flex flex-wrap gap-2">
           <Chip activo={filtroEstado === "todos"} onClick={() => setFiltroEstado("todos")}>
             Todos <span className="num opacity-70">{entero(r.articulos)}</span>
@@ -235,9 +257,9 @@ export function Stock({ datos, minimo, abrirProducto, filtroEstado, setFiltroEst
                 <motion.button
                   type="button"
                   onClick={() => abrirProducto(porClave.get(g.clave) ?? g)}
-                  initial={{ opacity: 0, y: 8 }}
+                  initial={animar ? { opacity: 0, y: 8 } : false}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.3, delay: Math.min(i, 12) * 0.02 }}
+                  transition={{ duration: 0.3, delay: animar ? Math.min(i, 12) * 0.02 : 0 }}
                   whileHover={{ y: -2 }}
                   className="flex w-full flex-wrap items-center gap-x-6 gap-y-3 rounded-2xl border border-line-2 bg-surface p-4 text-left shadow-card transition-colors hover:border-line focus-visible:outline-2 focus-visible:outline-ink"
                 >
@@ -280,6 +302,14 @@ export function Stock({ datos, minimo, abrirProducto, filtroEstado, setFiltroEst
       ) : (
         <Card className="overflow-hidden p-2">
           <Tabla etiqueta="Lista de tallas en stock" minAncho={760}>
+            {/* B6-2: el título de la tabla se ve y dice qué filtro y qué orden tiene. */}
+            <caption className="caption-top px-4 pb-2 pt-3 text-left text-[12.5px] text-muted">
+              <span className="font-semibold text-ink">
+                {entero(lista.length)} {lista.length === 1 ? "talla" : "tallas"}
+                {filtroEstado !== "todos" ? ` ${ESTADO_TEXTO[filtroEstado].toLowerCase()}` : " en stock"}
+              </span>
+              {busca ? ` que coinciden con «${q.trim()}»` : ""}, ordenadas por {NOMBRE_COL[orden.col]} ({sentidoOrden(orden)}).
+            </caption>
             <thead className="border-b border-line-2">
               <tr>
                 <Cabecera {...cab} col="empresa">Empresa</Cabecera>
@@ -291,9 +321,12 @@ export function Stock({ datos, minimo, abrirProducto, filtroEstado, setFiltroEst
               </tr>
             </thead>
             <tbody>
-              {lista.map((s) => (
-                <tr
+              {lista.map((s, i) => (
+                <motion.tr
                   key={s.codigo}
+                  initial={animar && i < 12 ? { opacity: 0 } : false}
+                  animate={{ opacity: 1 }}
+                  transition={{ duration: 0.25, delay: animar ? i * 0.02 : 0 }}
                   onClick={() => {
                     const g = porClave.get(`${s.empresa}||${s.producto}`);
                     if (g) abrirProducto(g);
@@ -314,9 +347,21 @@ export function Stock({ datos, minimo, abrirProducto, filtroEstado, setFiltroEst
                     <EstadoBadge estado={estadoDe(s.queda, minimo)} />
                   </td>
                   <td className={cn(td, "text-[13px] text-muted")}>{fechaLarga(s.ultimo_movimiento)}</td>
-                </tr>
+                </motion.tr>
               ))}
             </tbody>
+            {/* B6-2: el total de lo que se ve, con el mismo filtro y la misma búsqueda que las filas. */}
+            <tfoot className="border-t-2 border-line">
+              <tr>
+                <th scope="row" colSpan={3} className={cn(td, "text-left text-[13px] font-semibold")}>
+                  Total · {entero(lista.length)} {lista.length === 1 ? "talla" : "tallas"}
+                </th>
+                <td className={cn(td, "num text-right text-[15px] font-semibold")} data-testid="total-queda">{entero(totalQueda)}</td>
+                <td colSpan={2} className={cn(td, "text-[12.5px] text-muted")}>
+                  {totalQueda === 1 ? "unidad" : "unidades"}
+                </td>
+              </tr>
+            </tfoot>
           </Tabla>
         </Card>
       )}
