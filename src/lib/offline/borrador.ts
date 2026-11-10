@@ -1,5 +1,5 @@
 import type { FotoCapturada } from "../foto";
-import { abrirAlmacen, borrarMeta, claveBorrador, fotoComoBlob, fotoComoBytes, guardarMeta, leerMeta, type FotoEnAlmacen } from "./almacen";
+import { abrirAlmacen, borrarMeta, claveBorrador, fotoComoBlob, fotoParaGuardar, guardarMeta, leerMeta, type FotoEnAlmacen } from "./almacen";
 import { esQuota } from "./respaldo";
 
 // La cámara del celular puede cerrar la página: lo que ya se llenó no debe depender de la memoria de la pestaña.
@@ -27,14 +27,9 @@ const CLAVE_ANTIGUA = "borrador_registrar";
 
 export async function guardarBorrador(b: Borrador): Promise<ResultadoBorrador> {
   try {
-    try {
-      await guardarMeta(claveBorrador(b.dueno), b);
-    } catch (e) {
-      // Safari en navegación privada no guarda Blob en IndexedDB: la foto del borrador va como bytes.
-      if (!b.foto || esQuota(e)) throw e;
-      const foto: Omit<FotoCapturada, "blob"> & { blob: FotoEnAlmacen } = { ...b.foto, blob: await fotoComoBytes(b.foto.blob) };
-      await guardarMeta(claveBorrador(b.dueno), { ...b, foto });
-    }
+    // Safari en navegación privada no guarda Blob en IndexedDB: ahí la foto del borrador va como bytes.
+    const foto: (Omit<FotoCapturada, "blob"> & { blob: FotoEnAlmacen }) | null = b.foto ? { ...b.foto, blob: await fotoParaGuardar(b.foto.blob) } : null;
+    await guardarMeta(claveBorrador(b.dueno), { ...b, foto });
     return "ok";
   } catch (e) {
     console.error("[respaldo] borrador", e);

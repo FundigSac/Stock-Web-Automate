@@ -1,7 +1,7 @@
 import { IDBFactory } from "fake-indexeddb";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FotoCapturada } from "../../src/lib/foto";
-import { abrirAlmacen, cerrarAlmacen, fotoComoBlob, fotoComoBytes } from "../../src/lib/offline/almacen";
+import { abrirAlmacen, cerrarAlmacen, fotoComoBlob, fotoComoBytes, olvidarSondaBlob } from "../../src/lib/offline/almacen";
 import { guardarBorrador, leerBorrador } from "../../src/lib/offline/borrador";
 import { encolar, listarRespaldo, obtenerItem, type NuevoRegistro } from "../../src/lib/offline/respaldo";
 
@@ -35,6 +35,7 @@ const registro = (): NuevoRegistro => ({
 beforeEach(async () => {
   await cerrarAlmacen();
   globalThis.indexedDB = new IDBFactory();
+  olvidarSondaBlob();
   vi.spyOn(console, "error").mockImplementation(() => {});
 });
 afterEach(() => vi.restoreAllMocks());

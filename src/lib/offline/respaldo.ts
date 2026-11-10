@@ -1,6 +1,6 @@
 import { mesLima } from "../tiempo";
 import { nuevoUuid } from "../uuid";
-import { abrirAlmacen, borrarMeta, claveBorrador, esVersionVieja, fotoComoBlob, fotoComoBytes, guardarMeta, leerMeta, type EstadoItem, type FotoEnAlmacen, type ItemRespaldo, type LineaRespaldo, type OrigenHora, type RegistroRespaldo } from "./almacen";
+import { abrirAlmacen, borrarMeta, claveBorrador, fotoComoBlob, fotoParaGuardar, guardarMeta, leerMeta, type EstadoItem, type FotoEnAlmacen, type ItemRespaldo, type LineaRespaldo, type OrigenHora, type RegistroRespaldo } from "./almacen";
 import { desfaseConocido } from "./reloj";
 import { fotoAntigua } from "../tiempo";
 
@@ -110,7 +110,18 @@ async function escribirNuevo(registro: RegistroRespaldo, foto: FotoEnAlmacen | n
       }),
     );
   }
-  await Promise.all(pasos);
+  try {
+    await Promise.all(pasos);
+  } catch (e) {
+    // Si un paso falla, la transacción se aborta aquí mismo: una transacción que queda abierta
+    // dejaría esperando para siempre a la siguiente escritura en estos almacenes.
+    try {
+      tx.abort();
+    } catch {
+      /* ya había terminado */
+    }
+    throw e;
+  }
 }
 
 /** Con el disco lleno, la copia de la foto que guarda el borrador sobra: el registro lleva ese mismo archivo. */
@@ -152,20 +163,10 @@ export async function encolar(n: NuevoRegistro): Promise<ItemRespaldo> {
     desfaseAlGuardar: await desfaseConocido(Date.now()),
   };
   const form: DeFormulario | null = n.borrador || n.foto ? { clave: claveBorrador(n.dueno ?? null), id: n.borrador?.id ?? null, fotoId: n.foto?.id ?? null } : null;
-  let guardable: FotoEnAlmacen | null = blob;
+  // Safari en navegación privada no guarda Blob: ahí la foto va como bytes (se decide antes de abrir la transacción).
+  const guardable: FotoEnAlmacen | null = blob ? await fotoParaGuardar(blob) : null;
   try {
-    try {
-      await escribirNuevo(registro, guardable, form);
-    } catch (e) {
-      // Safari en navegación privada rechaza el Blob: se intenta una vez con los bytes de la foto.
-      if (!blob || esQuota(e) || esVersionVieja(e)) throw e;
-      guardable = await fotoComoBytes(blob);
-      try {
-        await escribirNuevo(registro, guardable, form);
-      } catch (e2) {
-        throw esQuota(e2) ? e2 : e;
-      }
-    }
+    await escribirNuevo(registro, guardable, form);
   } catch (e) {
     if (!esQuota(e)) throw e;
     await reintentarConEspacio(registro, guardable, form);

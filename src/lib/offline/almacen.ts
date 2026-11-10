@@ -67,6 +67,57 @@ export async function fotoComoBytes(b: Blob): Promise<FotoEnAlmacen> {
   return { bytes: await b.arrayBuffer(), tipo: b.type };
 }
 
+let sondaBlob: Promise<boolean> | null = null;
+
+/**
+ * ¿Este navegador guarda Blob en IndexedDB? Se prueba una vez, en una base aparte: en WebKit privado el put del Blob
+ * da error pero la transacción no termina nunca, y en la base real dejaría bloqueados los almacenes.
+ */
+export function admiteBlob(): Promise<boolean> {
+  sondaBlob ??= new Promise<boolean>((ok) => {
+    let listo = false;
+    const fin = (v: boolean) => {
+      if (listo) return;
+      listo = true;
+      ok(v);
+    };
+    setTimeout(() => fin(false), 3000);
+    try {
+      const q = indexedDB.open("stock-sonda-blob", 1);
+      q.onupgradeneeded = () => q.result.createObjectStore("s");
+      q.onerror = () => fin(false);
+      q.onsuccess = () => {
+        const db = q.result;
+        try {
+          const tx = db.transaction("s", "readwrite");
+          tx.objectStore("s").put(new Blob(["x"], { type: "text/plain" }), "x");
+          tx.oncomplete = () => {
+            fin(true);
+            db.close();
+          };
+          tx.onerror = () => fin(false);
+          tx.onabort = () => fin(false);
+        } catch {
+          fin(false);
+        }
+      };
+    } catch {
+      fin(false);
+    }
+  });
+  return sondaBlob;
+}
+
+/** Solo para pruebas: vuelve a probar en la próxima llamada. */
+export function olvidarSondaBlob() {
+  sondaBlob = null;
+}
+
+/** La foto en el formato que este navegador sí guarda. */
+export async function fotoParaGuardar(b: Blob): Promise<FotoEnAlmacen> {
+  return (await admiteBlob()) ? b : fotoComoBytes(b);
+}
+
 export function fotoComoBlob(f: FotoEnAlmacen | null | undefined): Blob | null {
   if (!f) return null;
   if (typeof (f as { bytes?: unknown }).bytes === "object") {
