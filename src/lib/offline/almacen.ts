@@ -57,11 +57,30 @@ export type ItemRespaldo = {
 export type RegistroRespaldo = Omit<ItemRespaldo, "foto" | "dueno" | "origenHora" | "horaDudosa" | "desfaseAlGuardar"> &
   Partial<Pick<ItemRespaldo, "foto" | "dueno" | "origenHora" | "horaDudosa" | "desfaseAlGuardar">>;
 
+/**
+ * Cómo queda guardada una foto. Normalmente como Blob; Safari en navegación privada (y el WebKit de las pruebas)
+ * no acepta Blob en IndexedDB, y ahí se guarda como bytes. Al leer, siempre vuelve a ser Blob.
+ */
+export type FotoEnAlmacen = Blob | { bytes: ArrayBuffer; tipo: string };
+
+export async function fotoComoBytes(b: Blob): Promise<FotoEnAlmacen> {
+  return { bytes: await b.arrayBuffer(), tipo: b.type };
+}
+
+export function fotoComoBlob(f: FotoEnAlmacen | null | undefined): Blob | null {
+  if (!f) return null;
+  if (typeof (f as { bytes?: unknown }).bytes === "object") {
+    const g = f as { bytes: ArrayBuffer; tipo: string };
+    return new Blob([g.bytes], { type: g.tipo });
+  }
+  return f as Blob;
+}
+
 export type CampoEspejo = "stock" | "entradas" | "salidas" | "trabajadores" | "pedidos" | "sync";
 
 interface Esquema extends DBSchema {
   respaldo: { key: string; value: RegistroRespaldo; indexes: { estado: EstadoItem } };
-  fotos: { key: string; value: { id: string; blob: Blob } };
+  fotos: { key: string; value: { id: string; blob: FotoEnAlmacen } };
   espejo: { key: CampoEspejo; value: { campo: CampoEspejo; filas: unknown; guardadoEn: number } };
   meta: { key: string; value: unknown };
 }

@@ -1,6 +1,6 @@
 import { mesLima } from "../tiempo";
 import { nuevoUuid } from "../uuid";
-import { abrirAlmacen, borrarMeta, claveBorrador, guardarMeta, leerMeta, type EstadoItem, type ItemRespaldo, type LineaRespaldo, type OrigenHora, type RegistroRespaldo } from "./almacen";
+import { abrirAlmacen, borrarMeta, claveBorrador, esVersionVieja, fotoComoBlob, fotoComoBytes, guardarMeta, leerMeta, type EstadoItem, type FotoEnAlmacen, type ItemRespaldo, type LineaRespaldo, type OrigenHora, type RegistroRespaldo } from "./almacen";
 import { desfaseConocido } from "./reloj";
 import { fotoAntigua } from "../tiempo";
 
@@ -86,7 +86,7 @@ const esSuBorrador = (b: BorradorGuardado | undefined, f: DeFormulario) => Boole
  * Escribe el registro y su foto en una sola transacción: o queda todo, o no queda nada.
  * El borrador del formulario sale en la misma transacción. Si la página se cierra después, nunca coexisten el registro y su borrador.
  */
-async function escribirNuevo(registro: RegistroRespaldo, foto: Blob | null, form: DeFormulario | null): Promise<void> {
+async function escribirNuevo(registro: RegistroRespaldo, foto: FotoEnAlmacen | null, form: DeFormulario | null): Promise<void> {
   const db = await abrirAlmacen();
   // strict: lo que la app dice que quedó guardado sobrevive a un corte de luz.
   const tx = db.transaction(["respaldo", "fotos", "meta"], "readwrite", { durability: "strict" });
@@ -152,18 +152,30 @@ export async function encolar(n: NuevoRegistro): Promise<ItemRespaldo> {
     desfaseAlGuardar: await desfaseConocido(Date.now()),
   };
   const form: DeFormulario | null = n.borrador || n.foto ? { clave: claveBorrador(n.dueno ?? null), id: n.borrador?.id ?? null, fotoId: n.foto?.id ?? null } : null;
+  let guardable: FotoEnAlmacen | null = blob;
   try {
-    await escribirNuevo(registro, blob, form);
+    try {
+      await escribirNuevo(registro, guardable, form);
+    } catch (e) {
+      // Safari en navegación privada rechaza el Blob: se intenta una vez con los bytes de la foto.
+      if (!blob || esQuota(e) || esVersionVieja(e)) throw e;
+      guardable = await fotoComoBytes(blob);
+      try {
+        await escribirNuevo(registro, guardable, form);
+      } catch (e2) {
+        throw esQuota(e2) ? e2 : e;
+      }
+    }
   } catch (e) {
     if (!esQuota(e)) throw e;
-    await reintentarConEspacio(registro, blob, form);
+    await reintentarConEspacio(registro, guardable, form);
   }
   avisar();
   return aItem(registro, blob);
 }
 
 /** Primero suelta el borrador de este formulario. Las copias de lo ya subido solo se sacrifican si eso no alcanza. */
-async function reintentarConEspacio(registro: RegistroRespaldo, blob: Blob | null, form: DeFormulario | null): Promise<void> {
+async function reintentarConEspacio(registro: RegistroRespaldo, blob: FotoEnAlmacen | null, form: DeFormulario | null): Promise<void> {
   if (await soltarBorradorDe(form).catch(() => false)) {
     try {
       await escribirNuevo(registro, blob, form);
@@ -185,7 +197,7 @@ export async function listarRespaldo(): Promise<ItemRespaldo[]> {
   const db = await abrirAlmacen();
   const tx = db.transaction(["respaldo", "fotos"]);
   const [registros, fotos] = await Promise.all([tx.objectStore("respaldo").getAll(), tx.objectStore("fotos").getAll()]);
-  const porId = new Map(fotos.map((f) => [f.id, f.blob]));
+  const porId = new Map(fotos.map((f) => [f.id, fotoComoBlob(f.blob)]));
   return registros.map((r) => aItem(r, porId.get(r.id) ?? null)).sort((a, b) => a.capturadoEn.localeCompare(b.capturadoEn));
 }
 
@@ -193,7 +205,7 @@ export async function obtenerItem(id: string): Promise<ItemRespaldo | undefined>
   const db = await abrirAlmacen();
   const tx = db.transaction(["respaldo", "fotos"]);
   const [r, f] = await Promise.all([tx.objectStore("respaldo").get(id), tx.objectStore("fotos").get(id)]);
-  return r ? aItem(r, f?.blob ?? null) : undefined;
+  return r ? aItem(r, fotoComoBlob(f?.blob)) : undefined;
 }
 
 /** Cambia solo los datos del registro. La foto no se reescribe: un cambio de estado pesa unos bytes. */

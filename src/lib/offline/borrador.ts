@@ -1,5 +1,5 @@
 import type { FotoCapturada } from "../foto";
-import { abrirAlmacen, borrarMeta, claveBorrador, guardarMeta, leerMeta } from "./almacen";
+import { abrirAlmacen, borrarMeta, claveBorrador, fotoComoBlob, fotoComoBytes, guardarMeta, leerMeta, type FotoEnAlmacen } from "./almacen";
 import { esQuota } from "./respaldo";
 
 // La cámara del celular puede cerrar la página: lo que ya se llenó no debe depender de la memoria de la pestaña.
@@ -27,7 +27,14 @@ const CLAVE_ANTIGUA = "borrador_registrar";
 
 export async function guardarBorrador(b: Borrador): Promise<ResultadoBorrador> {
   try {
-    await guardarMeta(claveBorrador(b.dueno), b);
+    try {
+      await guardarMeta(claveBorrador(b.dueno), b);
+    } catch (e) {
+      // Safari en navegación privada no guarda Blob en IndexedDB: la foto del borrador va como bytes.
+      if (!b.foto || esQuota(e)) throw e;
+      const foto: Omit<FotoCapturada, "blob"> & { blob: FotoEnAlmacen } = { ...b.foto, blob: await fotoComoBytes(b.foto.blob) };
+      await guardarMeta(claveBorrador(b.dueno), { ...b, foto });
+    }
     return "ok";
   } catch (e) {
     console.error("[respaldo] borrador", e);
@@ -52,8 +59,10 @@ async function leerDeRanura(dueno: string | null): Promise<Borrador | undefined>
 
 export async function leerBorrador(dueno: string | null): Promise<Borrador | null> {
   try {
-    const b = await leerDeRanura(dueno);
-    if (!b) return null;
+    const leido = await leerDeRanura(dueno);
+    if (!leido) return null;
+    const blob = leido.foto ? fotoComoBlob(leido.foto.blob as FotoEnAlmacen) : null;
+    const b: Borrador = leido.foto && blob ? { ...leido, foto: { ...leido.foto, blob } } : leido;
     // Si su foto ya está en la cola, ese registro se guardó: ofrecerlo otra vez crearía una salida duplicada.
     if (b.foto && !b.continuacion && (await fotoYaEnCola(b.foto.id))) {
       await borrarMeta(claveBorrador(dueno));
