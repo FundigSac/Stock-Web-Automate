@@ -588,6 +588,7 @@ test("una copia sin movimientos lo dice en vez de mostrar el historial vacío", 
   await expect(page.getByText(/no alcanzaron a descargarse/)).toBeVisible();
   await expect(page.getByText("Sin movimientos para mostrar")).toHaveCount(0);
   await expect(page.getByText("El almacén quedó igual")).toHaveCount(0);
+  await expect(page.getByText("Diferencia", { exact: true })).toHaveCount(0);
 });
 
 test.describe("entrada Línea de flujo", () => {
