@@ -2,7 +2,8 @@ import { defineConfig, devices } from "@playwright/test";
 
 // Capturas de QA con datos simulados (no forman parte de la suite). Uso:
 //   FASE=antes CAPTURAS=<carpeta> npx playwright test -c playwright.capturas.config.ts
-const PUERTO = 4176;
+// PW_PUERTO permite correrlas junto a otra copia del repo sin chocar de puerto.
+const PUERTO = Number(process.env.PW_PUERTO ?? 4176);
 
 export default defineConfig({
   testDir: "tests/capturas",

@@ -85,6 +85,10 @@ export class Simulado {
   /** Mientras no se resuelva, las lecturas de datos quedan esperando (para ver la carga). */
   espera: Promise<void> | null = null;
   lecturas = 0;
+  /** Corta la red hacia Supabase: las peticiones fallan como sin señal. */
+  sinRed = false;
+  /** Llamadas a la RPC que sube registros. */
+  registros = 0;
 
   async conectar(context: BrowserContext) {
     await context.route(`${SUPABASE}/**`, (route) => this.responder(route));
@@ -96,10 +100,17 @@ export class Simulado {
 
   private async responder(route: Route) {
     const req = route.request();
+    if (this.sinRed) return route.abort("internetdisconnected");
     if (req.method() === "OPTIONS") return route.fulfill({ status: 200, headers: cors });
     const ruta = new URL(req.url()).pathname;
     if (ruta === "/rest/v1/rpc/uso_almacen") return this.json(route, { base_bytes: 42 * 1048576, base_limite: 524288000, fotos_bytes: 120 * 1048576, fotos_limite: 1073741824, fotos: 800 });
     if (ruta === "/rest/v1/rpc/is_editor") return this.json(route, true);
+    if (ruta === "/rest/v1/rpc/registrar_offline") {
+      const c = req.postDataJSON() as { p_items: { client_id: string; codigo: string }[] };
+      this.registros++;
+      return this.json(route, { servidor_ahora: new Date().toISOString(), reloj_desfase_segundos: 0, items: c.p_items.map((i, n) => ({ client_id: i.client_id, codigo: i.codigo, id: 100 + n, queda: 1 })) });
+    }
+    if (ruta.startsWith("/storage/v1/object/evidencias/")) return this.json(route, { Key: ruta });
     const tabla = ruta.replace("/rest/v1/", "");
     const datos: Record<string, unknown> = { stock_items: STOCK, entradas: ENTRADAS, salidas: SALIDAS, trabajadores: TRABAJADORES, ajustes: [AJUSTES], pedidos: [] };
     if (tabla in datos) {

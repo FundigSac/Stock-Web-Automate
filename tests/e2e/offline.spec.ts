@@ -82,7 +82,10 @@ class SupabaseFalso {
 
 const estado = (page: Page, texto: string | RegExp) => page.getByRole("status").filter({ hasText: texto }).filter({ visible: true });
 
+const SIN_SW_EN_WEBKIT = "En WebKit, Playwright no intercepta las peticiones que pasan por el service worker; el proyecto WebKit corre con el SW bloqueado.";
+
 async function abrirConServiceWorker(page: Page) {
+  test.skip(test.info().project.name.includes("webkit"), SIN_SW_EN_WEBKIT);
   await page.goto("/");
   await expect(estado(page, /En vivo|Conectado/)).toBeVisible();
   await page.evaluate(async () => {
@@ -119,7 +122,7 @@ async function registrarSalidaConFoto(page: Page) {
   await v.getByRole("button", { name: "Agregar una unidad (Talla M)" }).click();
   await page.locator("#foto-camara").setInputFiles({ name: "foto.png", mimeType: "image/png", buffer: FOTO });
   await expect(v.getByAltText("Foto de la entrega")).toBeVisible();
-  await v.getByRole("button", { name: "Guardar", exact: true }).click();
+  await v.getByRole("button", { name: /^Registrar (entrega|entrada)$/ }).click();
   await expect(v).toBeHidden();
 }
 
@@ -127,7 +130,8 @@ test.beforeEach(async ({ context }) => {
   await context.grantPermissions([]);
 });
 
-test("sin conexión: registra con foto, sobrevive a recargar y sube con la hora de la foto", async ({ context, page }) => {
+test("sin conexión: registra con foto, sobrevive a recargar y sube con la hora de la foto", async ({ context, page, browserName }) => {
+  test.skip(browserName === "firefox", "Con context.setOffline, Playwright pone a Firefox en modo «trabajar sin conexión»: la recarga falla con NS_ERROR_OFFLINE antes de llegar al service worker. Es del modo de prueba, no de la app.");
   const sb = new SupabaseFalso();
   await sb.conectar(context);
   await abrirConServiceWorker(page);
@@ -143,7 +147,7 @@ test("sin conexión: registra con foto, sobrevive a recargar y sube con la hora 
   expect(sb.llamadasRegistro).toHaveLength(0);
 
   // Las cifras incluyen lo que falta subir, y se dice que son provisionales.
-  await expect(page.getByTestId("aviso-provisional")).toContainText("Cifras provisionales");
+  await expect(page.getByTestId("aviso-provisional")).toContainText(/Sin conexión — mostrando datos guardados .* Falta subir 1 registro: las cifras son provisionales./);
   await page.getByRole("navigation", { name: "Secciones" }).filter({ visible: true }).getByRole("button", { name: "Stock" }).click();
   await expect(page.getByText("9", { exact: true }).first()).toBeVisible();
 
@@ -227,7 +231,8 @@ test("sin la migración el registro se queda en cola y lo dice", async ({ contex
   expect(sb.filas.size).toBe(1);
 });
 
-test("sin red no se cierra la sesión aunque el token haya vencido", async ({ context, page }) => {
+test("sin red no se cierra la sesión aunque el token haya vencido", async ({ context, page, browserName }) => {
+  test.skip(browserName === "firefox", "Con context.setOffline, Playwright pone a Firefox en modo «trabajar sin conexión»: la recarga falla con NS_ERROR_OFFLINE antes de llegar al service worker. Es del modo de prueba, no de la app.");
   const sb = new SupabaseFalso();
   await sb.conectar(context);
   await abrirConServiceWorker(page);

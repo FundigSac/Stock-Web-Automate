@@ -127,7 +127,7 @@ test("cerrar sesión con registros sin subir pide confirmación", async ({ conte
   await expect(estado(page, /En vivo|Conectado/)).toBeVisible();
 
   const v = await llenarSalida(page, false);
-  await v.getByRole("button", { name: "Guardar", exact: true }).click();
+  await v.getByRole("button", { name: /^Registrar (entrega|entrada)$/ }).click();
   await expect(v).toBeHidden();
   await expect(estado(page, "1 por subir")).toBeVisible();
 
@@ -138,9 +138,10 @@ test("cerrar sesión con registros sin subir pide confirmación", async ({ conte
   expect(await page.evaluate(() => localStorage.getItem("sb-127-auth-token"))).not.toBeNull();
 });
 
-test("con el almacenamiento lleno la cola sigue subiendo", async ({ context, page }) => {
+test("con el almacenamiento lleno la cola sigue subiendo", async ({ context, page, browserName, baseURL }) => {
+  test.skip(browserName !== "chromium", "Llenar la cuota del origen usa el protocolo de depuración de Chromium (CDP); Firefox y WebKit no lo exponen.");
   test.setTimeout(120_000);
-  const origen = "http://127.0.0.1:4174";
+  const origen = new URL(baseURL!).origin;
   const sb = new Falso();
   await sb.conectar(context);
   await page.goto("/");
@@ -150,7 +151,7 @@ test("con el almacenamiento lleno la cola sigue subiendo", async ({ context, pag
   await context.setOffline(true);
   await expect(estado(page, /^Sin conexión/)).toBeVisible();
   const v = await llenarSalida(page);
-  await v.getByRole("button", { name: "Guardar", exact: true }).click();
+  await v.getByRole("button", { name: /^Registrar (entrega|entrada)$/ }).click();
   await expect(v).toBeHidden();
   await expect(estado(page, "Sin conexión, 1 por subir")).toBeVisible();
 
@@ -175,7 +176,7 @@ test("un registro rechazado no toca el stock y se puede descartar", async ({ con
   await expect(estado(page, /En vivo|Conectado/)).toBeVisible();
 
   const v = await llenarSalida(page);
-  await v.getByRole("button", { name: "Guardar", exact: true }).click();
+  await v.getByRole("button", { name: /^Registrar (entrega|entrada)$/ }).click();
   await expect(v).toBeHidden();
   await expect(estado(page, "1 por revisar")).toBeVisible();
   await expect(page.getByTestId("aviso-provisional")).toHaveCount(0);
@@ -260,7 +261,7 @@ test("la fecha se toma de la foto aunque el formulario se abriera el día anteri
   await page.locator("#foto-camara").setInputFiles({ name: "foto.png", mimeType: "image/png", buffer: FOTO });
   await expect(v.getByAltText("Foto de la entrega")).toBeVisible();
   await expect(v.locator("#reg-fecha")).toHaveValue("2026-11-09");
-  await v.getByRole("button", { name: "Guardar", exact: true }).click();
+  await v.getByRole("button", { name: /^Registrar (entrega|entrada)$/ }).click();
   await expect.poll(() => sb.cargas.length).toBe(1);
   expect(sb.cargas[0].p_fecha).toBe("2026-11-09");
 });
@@ -272,7 +273,7 @@ test("elegir otra fecha que la de la foto pide confirmación", async ({ context,
   await expect(estado(page, /En vivo|Conectado/)).toBeVisible();
   const v = await llenarSalida(page);
   await v.locator("#reg-fecha").fill("2026-10-01");
-  await v.getByRole("button", { name: "Guardar", exact: true }).click();
+  await v.getByRole("button", { name: /^Registrar (entrega|entrada)$/ }).click();
   await expect(v.getByRole("alert")).toContainText("La foto es del");
   expect(sb.cargas).toHaveLength(0);
   await v.getByRole("button", { name: "Registrar igual" }).click();
@@ -297,7 +298,7 @@ test("un formulario con foto se puede recuperar después de recargar", async ({ 
   await expect(v.locator("#reg-quien")).toHaveValue("DIEGO SOTO");
 });
 
-test("el texto va justificado, las tipografías son propias y avisa que quedó lista sin conexión", async ({ context, page }) => {
+test("el texto va justificado, las tipografías son propias y avisa que quedó lista sin conexión", async ({ context, page }, info) => {
   const sb = new Falso();
   await sb.conectar(context);
   const externas: string[] = [];
@@ -306,7 +307,8 @@ test("el texto va justificado, las tipografías son propias y avisa que quedó l
   });
   await page.goto("/");
   await expect(estado(page, /En vivo|Conectado/)).toBeVisible();
-  await expect(page.getByText("Lista para usar sin conexión")).toBeVisible({ timeout: 20_000 });
+  // El aviso sale cuando el service worker queda listo; en WebKit el SW va bloqueado (ver playwright.config.ts).
+  if (!info.project.name.includes("webkit")) await expect(page.getByText("Lista para usar sin conexión")).toBeVisible({ timeout: 20_000 });
   const medidas = await page.evaluate(async () => {
     await document.fonts.ready;
     const largos = [...document.querySelectorAll("main p, main li")].filter((e) => (e.textContent ?? "").length >= 45 && e.getBoundingClientRect().width > 0);
@@ -437,7 +439,7 @@ test("si un proxy corta la renovación, lo guardado sigue siendo de esa cuenta",
   await page.goto("/");
   await expect(estado(page, /En vivo|Conectado/)).toBeVisible();
   const v = await llenarSalida(page, false);
-  await v.getByRole("button", { name: "Guardar", exact: true }).click();
+  await v.getByRole("button", { name: /^Registrar (entrega|entrada)$/ }).click();
   await expect(v).toBeHidden();
   await expect(estado(page, "1 por subir")).toBeVisible();
 
@@ -524,7 +526,7 @@ test("un borrador sin resolver no se pierde al guardar otra cosa ni al tomar otr
   await expect(v.getByText(/para Diego Soto/)).toBeVisible();
   await v.getByRole("button", { name: /Polo Azul/ }).click();
   await v.getByRole("button", { name: "Agregar una unidad (Talla M)" }).click();
-  await v.getByRole("button", { name: "Guardar", exact: true }).click();
+  await v.getByRole("button", { name: /^Registrar (entrega|entrada)$/ }).click();
   await expect(v).toBeHidden();
   await expect.poll(() => sb.cargas.length).toBe(1);
 
@@ -649,6 +651,7 @@ for (const [ancho, alto] of [[360, 800], [375, 812], [390, 844], [768, 1024], [1
 
 // Espacio del servidor (RPC uso_almacen): tarjeta en Respaldo y aviso en Resumen desde el 80 %.
 async function serviceWorkerListo(page: Page) {
+  test.skip(test.info().project.name.includes("webkit"), "En WebKit, Playwright no intercepta las peticiones que pasan por el service worker; el proyecto WebKit corre con el SW bloqueado.");
   await page.evaluate(async () => {
     await navigator.serviceWorker.ready;
     if (!navigator.serviceWorker.controller) {
@@ -683,7 +686,8 @@ test("desde el 80 % se ve un aviso del espacio en Resumen y en Respaldo", async 
   await expect(page.getByRole("region", { name: "Espacio usado" }).getByRole("alert")).toContainText("las fotos ocupan el 88 % y la base ocupa el 90 %");
 });
 
-test("sin red el espacio muestra el último valor conocido", async ({ context, page }) => {
+test("sin red el espacio muestra el último valor conocido", async ({ context, page, browserName }) => {
+  test.skip(browserName === "firefox", "Con context.setOffline, Playwright pone a Firefox en modo «trabajar sin conexión»: la recarga falla con NS_ERROR_OFFLINE antes de llegar al service worker. Es del modo de prueba, no de la app.");
   const sb = new Falso();
   await sb.conectar(context);
   await page.goto("/");

@@ -253,8 +253,9 @@ test.describe("B16-4 + B5-1 barra inferior con píldora", () => {
         await expect.poll(async () => Math.abs((await centros(page)).pildora - (await centros(page)).activo), `píldora bajo ${v} (${i})`).toBeLessThan(1.5);
       }
       const c = await centros(page);
-      expect(c.alto).toBe(32);
-      expect(c.ancho).toBe(56);
+      // Firefox y WebKit dan la medida con decimales de coma flotante (56.0000076): se compara al centésimo.
+      expect(c.alto).toBeCloseTo(32, 1);
+      expect(c.ancho).toBeCloseTo(56, 1);
     });
   }
 
@@ -337,7 +338,8 @@ test.describe("B9-3 objetivos táctiles de 48 px en el celular", () => {
     expect(medidos).toBeGreaterThan(80);
   });
 
-  test("en escritorio no cambia el tamaño de los controles", async ({ page }) => {
+  test("en escritorio no cambia el tamaño de los controles", async ({ page, isMobile }) => {
+    test.skip(isMobile, "En el iPhone el puntero es táctil: la regla B9-3 (pointer: coarse) da 48 px a propósito.");
     await page.setViewportSize({ width: 1280, height: 800 });
     await abrir(page);
     const pdf = await page.getByRole("button", { name: "PDF" }).boundingBox();

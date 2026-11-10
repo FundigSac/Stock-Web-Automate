@@ -118,7 +118,8 @@ describe("B16-4 + B5-1: la píldora de la barra inferior se mueve solo con trans
 });
 
 describe("B9-1 y B9-3: reglas globales de index.css", () => {
-  const css = readFileSync("src/index.css", "utf8");
+  // Con core.autocrlf=true (Windows) la copia de trabajo trae CRLF: se normaliza para que la prueba no dependa del sistema.
+  const css = readFileSync("src/index.css", "utf8").replace(/\r\n/g, "\n");
   it("las cifras son de ancho fijo en toda la app", () => {
     expect(css).toMatch(/body \{[^}]*font-variant-numeric: tabular-nums;/);
   });
