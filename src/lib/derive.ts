@@ -101,7 +101,37 @@ export type GrupoProducto = {
   peor: Estado;
 };
 
-const PRIORIDAD: Record<Estado, number> = { revisar: 0, bajo: 1, sin: 2, ok: 3 };
+/** Gravedad de cada estado: menor es peor. Un saldo negativo pesa más que una talla agotada. */
+export const GRAVEDAD: Record<Estado, number> = { revisar: 0, sin: 1, bajo: 2, ok: 3 };
+
+export type EstadoProducto = {
+  /** El estado de la peor talla. */
+  estado: Estado;
+  /** Tallas que están en ese estado. */
+  afectadas: number;
+  total: number;
+};
+
+/** El estado de un producto es el de su peor talla, y se dice cuántas tallas lo tienen. */
+export function estadoProducto(tallas: Pick<StockItem, "queda">[], minimo: number): EstadoProducto {
+  let estado: Estado = "ok";
+  let afectadas = 0;
+  for (const t of tallas) {
+    const e = estadoDe(t.queda, minimo);
+    if (GRAVEDAD[e] < GRAVEDAD[estado]) {
+      estado = e;
+      afectadas = 1;
+    } else if (e === estado) afectadas++;
+  }
+  return { estado, afectadas, total: tallas.length };
+}
+
+/** "Sin stock · 1 de 3 tallas" cuando no todas las tallas comparten el estado. */
+export function textoEstadoProducto(ep: EstadoProducto): string {
+  const base = ESTADO_TEXTO[ep.estado];
+  if (ep.total <= 1 || ep.afectadas === ep.total) return base;
+  return `${base} · ${ep.afectadas} de ${ep.total} tallas`;
+}
 
 export function agruparProductos(items: StockItem[], minimo: number): GrupoProducto[] {
   const mapa = new Map<string, GrupoProducto>();
@@ -115,7 +145,7 @@ export function agruparProductos(items: StockItem[], minimo: number): GrupoProdu
     g.tallas.push(it);
     g.unidades += Math.max(0, it.queda);
     const e = estadoDe(it.queda, minimo);
-    if (PRIORIDAD[e] < PRIORIDAD[g.peor]) g.peor = e;
+    if (GRAVEDAD[e] < GRAVEDAD[g.peor]) g.peor = e;
   }
   const grupos = Array.from(mapa.values());
   for (const g of grupos) g.tallas.sort((a, b) => rangoTalla(a.talla) - rangoTalla(b.talla));

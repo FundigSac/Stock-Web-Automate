@@ -1,8 +1,8 @@
 import { motion } from "framer-motion";
-import { ArrowDown, ArrowUp, ChevronsUpDown, LayoutGrid, List, Package, PackagePlus, Plus, Search } from "lucide-react";
+import { AlertTriangle, ArrowDown, ArrowUp, ChevronsUpDown, CircleSlash, LayoutGrid, List, Package, PackagePlus, Plus, Search } from "lucide-react";
 import { useMemo, useState } from "react";
-import { Card, Chip, EstadoBadge, Tabla, Vacio, td, th } from "../components/ui";
-import { agruparProductos, ESTADO_TEXTO, estadoDe, rangoTalla, resumir } from "../lib/derive";
+import { Card, Chip, ESTADO_ICONO, EstadoBadge, Tabla, Vacio, td, th } from "../components/ui";
+import { agruparProductos, ESTADO_TEXTO, estadoDe, estadoProducto, GRAVEDAD, rangoTalla, resumir, textoEstadoProducto } from "../lib/derive";
 import { entero, fechaLarga, norm, nombreProducto, nombreTallaEn, titulo } from "../lib/format";
 import type { Estado, StockItem } from "../lib/types";
 import { cn } from "../lib/utils";
@@ -10,7 +10,6 @@ import type { VistaProps } from "./tipos";
 
 type Col = "empresa" | "producto" | "talla" | "queda" | "estado" | "ultimo";
 
-const PRIORIDAD: Record<Estado, number> = { revisar: 0, bajo: 1, sin: 2, ok: 3 };
 
 const CHIP_TALLA: Record<Estado, string> = {
   ok: "bg-ink text-white",
@@ -73,7 +72,7 @@ export function Stock({ datos, minimo, abrirProducto, filtroEstado, setFiltroEst
         case "producto": return s.producto;
         case "talla": return rangoTalla(s.talla);
         case "queda": return s.queda;
-        case "estado": return PRIORIDAD[estadoDe(s.queda, minimo)];
+        case "estado": return GRAVEDAD[estadoDe(s.queda, minimo)];
         case "ultimo": return s.ultimo_movimiento ?? "";
       }
     };
@@ -183,12 +182,16 @@ export function Stock({ datos, minimo, abrirProducto, filtroEstado, setFiltroEst
           </Chip>
           {(["ok", "bajo", "sin", "revisar"] as Estado[])
             .filter((e) => e !== "revisar" || r.revisar > 0)
-            .map((e) => (
+            .map((e) => {
+              const Icono = ESTADO_ICONO[e];
+              return (
               <Chip key={e} activo={filtroEstado === e} onClick={() => setFiltroEstado(e)}>
+                <Icono className="size-3.5" aria-hidden />
                 {ESTADO_TEXTO[e]}{" "}
                 <span className="num opacity-70">{entero(cuenta(e))}</span>
               </Chip>
-            ))}
+              );
+            })}
         </div>
         {modo === "productos" && (
           <p className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[12px] text-muted">
@@ -197,10 +200,10 @@ export function Stock({ datos, minimo, abrirProducto, filtroEstado, setFiltroEst
               <span className="size-2.5 rounded bg-ink" /> con stock
             </span>
             <span className="inline-flex items-center gap-1.5">
-              <span className="size-2.5 rounded bg-warn-soft ring-1 ring-warn/40" /> por agotarse
+              <AlertTriangle className="size-3.5 text-warn" aria-hidden /> por agotarse
             </span>
             <span className="inline-flex items-center gap-1.5">
-              <span className="size-2.5 rounded bg-line" /> sin stock
+              <CircleSlash className="size-3.5 text-faint" aria-hidden /> sin stock
             </span>
           </p>
         )}
@@ -219,6 +222,8 @@ export function Stock({ datos, minimo, abrirProducto, filtroEstado, setFiltroEst
           {gruposVisibles.map((g, i) => {
             const nuevaEmpresa = g.empresa !== empresaPrevia;
             empresaPrevia = g.empresa;
+            // El estado del producto sale de todas sus tallas, aunque el filtro muestre solo algunas.
+            const ep = estadoProducto(porClave.get(g.clave)?.tallas ?? g.tallas, minimo);
             return (
               <div key={g.clave}>
                 {nuevaEmpresa && (
@@ -242,18 +247,23 @@ export function Stock({ datos, minimo, abrirProducto, filtroEstado, setFiltroEst
                       {g.genero ? `${titulo(g.genero)} · ` : ""}
                       {g.tallas.length} {g.tallas.length === 1 ? "talla" : "tallas"}
                     </p>
+                    <EstadoBadge estado={ep.estado} texto={textoEstadoProducto(ep)} className="mt-2" />
                   </div>
                   <div className="flex flex-wrap gap-1.5">
                     {g.tallas.map((t) => {
                       const e = estadoDe(t.queda, minimo);
+                      const Icono = e === "ok" ? null : ESTADO_ICONO[e];
                       return (
                         <span
                           key={t.codigo}
+                          data-estado={e}
                           className={cn("inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[12px]", CHIP_TALLA[e])}
-                          title={`${t.codigo}: quedan ${t.queda}`}
+                          title={`${t.codigo}: quedan ${t.queda} (${ESTADO_TEXTO[e].toLowerCase()})`}
                         >
+                          {Icono && <Icono className="size-3.5 shrink-0" strokeWidth={2.25} aria-hidden />}
                           <b className="font-semibold">{nombreTallaEn(t.talla, porClave.get(g.clave)?.tallas ?? g.tallas)}</b>
                           <span className="num font-semibold opacity-90">{entero(t.queda)}</span>
+                          <span className="sr-only"> ({ESTADO_TEXTO[e].toLowerCase()})</span>
                         </span>
                       );
                     })}

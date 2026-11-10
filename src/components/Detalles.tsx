@@ -1,6 +1,6 @@
 import { Minus, Plus } from "lucide-react";
 import { useMemo, useState } from "react";
-import { entregasDe, estadoDe, movimientosDe, type GrupoProducto } from "../lib/derive";
+import { entregasDe, estadoDe, estadoProducto, movimientosDe, textoEstadoProducto, type GrupoProducto } from "../lib/derive";
 import { entero, etiquetaTalla, fechaLarga, nombreProducto, nombreTallaEn, partirMovimiento, titulo } from "../lib/format";
 import type { Datos } from "../lib/types";
 import { cn } from "../lib/utils";
@@ -35,6 +35,7 @@ export function VentanaProducto({
     (a, b) => grupo.tallas.findIndex((t) => t.codigo === a.codigo) - grupo.tallas.findIndex((t) => t.codigo === b.codigo),
   );
   const unidades = tallas.reduce((a, t) => a + Math.max(0, t.queda), 0);
+  const ep = estadoProducto(tallas, minimo);
 
   return (
     <Ventana
@@ -45,6 +46,9 @@ export function VentanaProducto({
         <>
           {titulo(grupo.empresa)}
           {grupo.genero ? ` · ${titulo(grupo.genero)}` : ""} · <b className="num text-ink">{entero(unidades)}</b> unidades en total
+          <span className="mt-2 block">
+            <EstadoBadge estado={ep.estado} texto={textoEstadoProducto(ep)} />
+          </span>
         </>
       }
     >

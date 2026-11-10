@@ -1,6 +1,6 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import { animate } from "framer-motion";
-import { X } from "lucide-react";
+import { AlertOctagon, AlertTriangle, CheckCircle2, CircleSlash, X, type LucideIcon } from "lucide-react";
 import { useEffect, useId, useRef, useState, type ButtonHTMLAttributes, type HTMLAttributes, type ReactNode } from "react";
 import { ESTADO_TEXTO } from "../lib/derive";
 import { entero } from "../lib/format";
@@ -26,17 +26,28 @@ const ESTADO_ESTILO: Record<Estado, string> = {
   revisar: "bg-red-soft text-red",
 };
 
-export function EstadoBadge({ estado, className }: { estado: Estado; className?: string }) {
+/** Cada estado lleva su propio icono: el color nunca es la única señal. */
+export const ESTADO_ICONO: Record<Estado, LucideIcon> = {
+  ok: CheckCircle2,
+  bajo: AlertTriangle,
+  sin: CircleSlash,
+  revisar: AlertOctagon,
+};
+
+/** Estado con icono y texto. `texto` permite decir más ("Sin stock · 1 de 3 tallas"). */
+export function EstadoBadge({ estado, texto, className }: { estado: Estado; texto?: string; className?: string }) {
+  const Icono = ESTADO_ICONO[estado];
   return (
     <span
+      data-estado={estado}
       className={cn(
         "inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-semibold",
         ESTADO_ESTILO[estado],
         className,
       )}
     >
-      <span className="size-1.5 rounded-full bg-current" aria-hidden />
-      {ESTADO_TEXTO[estado]}
+      <Icono className="size-3.5 shrink-0" strokeWidth={2.25} aria-hidden />
+      {texto ?? ESTADO_TEXTO[estado]}
     </span>
   );
 }

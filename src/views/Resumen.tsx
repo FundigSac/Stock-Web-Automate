@@ -11,17 +11,19 @@ import {
   Sparkles,
 } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
-import { Card, Chip, CountUp, Kicker, Vacio } from "../components/ui";
+import { Card, Chip, CountUp, EstadoBadge, Kicker, Vacio } from "../components/ui";
 import { MovChart } from "../components/MovChartDiferido";
 import { AvisoEspacio } from "../components/UsoAlmacen";
 import {
   agruparProductos,
   estadoDe,
+  estadoProducto,
   lecturas,
   movimientosDe,
   porEmpresa,
   resumir,
   serieDiaria,
+  textoEstadoProducto,
 } from "../lib/derive";
 import { entero, etiquetaTalla, fechaCorta, fechaLarga, nombreProducto, nombreTallaEn, partirMovimiento, titulo } from "../lib/format";
 import { cn } from "../lib/utils";
@@ -282,7 +284,9 @@ export function Resumen({ todos, datos, minimo, empresa, cambiarEmpresa, abrirPr
             ) : (
               <>
                 <ul className="mt-3 divide-y divide-line-2">
-                  {atencion.slice(0, 6).map(({ g, afectadas }) => (
+                  {atencion.slice(0, 6).map(({ g, afectadas }) => {
+                    const ep = estadoProducto(g.tallas, minimo);
+                    return (
                     <li key={g.clave}>
                       <button
                         type="button"
@@ -294,11 +298,13 @@ export function Resumen({ todos, datos, minimo, empresa, cambiarEmpresa, abrirPr
                           <p className="mt-0.5 truncate text-[12px] text-muted">
                             {titulo(g.empresa)} · tallas {afectadas.map((t) => nombreTallaEn(t.talla, g.tallas)).join(", ")}
                           </p>
+                          <EstadoBadge estado={ep.estado} texto={textoEstadoProducto(ep)} className="mt-1.5" />
                         </div>
                         <ChevronRight className="size-4 shrink-0 text-faint transition group-hover:translate-x-0.5 group-hover:text-ink" />
                       </button>
                     </li>
-                  ))}
+                    );
+                  })}
                 </ul>
                 {atencion.length > 6 && (
                   <button
