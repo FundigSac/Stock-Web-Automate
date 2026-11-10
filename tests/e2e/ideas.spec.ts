@@ -152,3 +152,70 @@ test.describe("X10-4 un fallo de carga nunca se muestra como 'no hay datos'", ()
     await expect(ficha.locator('[data-cantidad="salida"]').first()).toBeVisible();
   });
 });
+
+test.describe("B12-1 esqueletos mientras cargan los datos", () => {
+  /** Retiene las lecturas hasta que la prueba las suelte. */
+  function retenido() {
+    const sb = new Simulado();
+    let soltar = () => {};
+    sb.espera = new Promise<void>((ok) => (soltar = ok));
+    return { sb, soltar: () => soltar() };
+  }
+
+  test("se ven tarjetas esqueleto, nunca un 'no hay', y luego los datos", async ({ page }) => {
+    const { sb, soltar } = retenido();
+    await sb.conectar(page.context());
+    await page.goto("/");
+    const esq = page.locator('[data-esqueleto="resumen"]');
+    await expect(esq).toBeVisible();
+    await expect(esq).toHaveAttribute("aria-busy", "true");
+    await expect(esq.getByRole("status")).toHaveText("Cargando datos…");
+    expect(await esq.locator(".skeleton").count()).toBeGreaterThan(10);
+    await expect(page.getByText(/Sin movimientos|No hay|Todavía no hay/)).toHaveCount(0);
+    // Con movimiento normal hay brillo.
+    expect(await esq.locator(".skeleton").first().evaluate((e) => getComputedStyle(e, "::after").animationName)).toBe("shimmer");
+    // Se puede cambiar de vista mientras carga: el esqueleto toma la forma de esa vista.
+    await irA(page, /^Movimientos/);
+    await expect(page.locator('[data-esqueleto="movimientos"]')).toBeVisible();
+    await irA(page, /^Resumen/);
+    soltar();
+    await expect(esq).toHaveCount(0);
+    await expect(page.getByText("Unidades en almacén")).toBeVisible();
+  });
+
+  test("con movimiento reducido no hay brillo", async ({ browser }) => {
+    const context = await browser.newContext({ reducedMotion: "reduce" });
+    const page = await context.newPage();
+    const { sb, soltar } = retenido();
+    await sb.conectar(context);
+    await page.goto("/");
+    const bloque = page.locator('[data-esqueleto="resumen"] .skeleton').first();
+    await expect(bloque).toBeVisible();
+    expect(await bloque.evaluate((e) => getComputedStyle(e, "::after").display)).toBe("none");
+    soltar();
+    await context.close();
+  });
+
+  for (const [ancho, alto] of [[1280, 800], [390, 844]] as const) {
+    test(`al llegar los datos no hay saltos de diseño a ${ancho}px`, async ({ page }) => {
+      await page.setViewportSize({ width: ancho, height: alto });
+      await page.addInitScript(() => {
+        const w = window as unknown as { __cls: number };
+        w.__cls = 0;
+        new PerformanceObserver((l) => {
+          for (const e of l.getEntries() as unknown as { value: number; hadRecentInput: boolean }[]) if (!e.hadRecentInput) w.__cls += e.value;
+        }).observe({ type: "layout-shift", buffered: true });
+      });
+      const { sb, soltar } = retenido();
+      await sb.conectar(page.context());
+      await page.goto("/");
+      await expect(page.locator('[data-esqueleto="resumen"]')).toBeVisible();
+      await page.waitForTimeout(400);
+      soltar();
+      await expect(enVivo(page)).toBeVisible();
+      await page.waitForTimeout(1500);
+      const cls = await page.evaluate(() => (window as unknown as { __cls: number }).__cls);
+      expect(cls, `CLS a ${ancho}px`).toBeLessThan(0.1);
+    });
+  }
+});

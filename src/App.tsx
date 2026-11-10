@@ -26,7 +26,8 @@ import { NecesitaConexion } from "./components/NecesitaConexion";
 import { NuevoProductoDialog, NuevoTrabajadorDialog } from "./components/Nuevo";
 import { PedidosDialog } from "./components/Pedidos";
 import { AnularDialog, RegistrarDialog, type PreRegistro } from "./components/Registrar";
-import { Boton, BotonReintentar, Skeleton } from "./components/ui";
+import { Boton, BotonReintentar } from "./components/ui";
+import { EsqueletoVista } from "./components/Esqueletos";
 import { AuthProvider, useAuth } from "./lib/auth";
 import { filtrarPorEmpresa, resumir, type GrupoProducto } from "./lib/derive";
 import { edadCopia, fechaLarga, titulo } from "./lib/format";
@@ -409,17 +410,7 @@ function Tablero() {
             </div>
           </div>
         ) : cargando ? (
-          <div className="space-y-5">
-            <div className="grid grid-cols-1 gap-5 xl:grid-cols-3">
-              <Skeleton className="h-[360px] xl:col-span-2" />
-              <Skeleton className="h-[360px]" />
-            </div>
-            <div className="grid grid-cols-2 gap-5 xl:grid-cols-4">
-              {[0, 1, 2, 3].map((i) => (
-                <Skeleton key={i} className="h-32" />
-              ))}
-            </div>
-          </div>
+          <EsqueletoVista vista={vista} />
         ) : (
           <AnimatePresence mode="wait">
             <motion.div
