@@ -2,7 +2,7 @@ import { Activity, ArrowDownToLine, ArrowUpFromLine, Ban, Plus, Search } from "l
 import { useMemo, useState } from "react";
 import { MovChart } from "../components/MovChartDiferido";
 import { MiniFoto, VisorFoto } from "../components/Evidencia";
-import { Boton, Card, Chip, Vacio } from "../components/ui";
+import { Boton, Card, Chip, Kicker, Vacio } from "../components/ui";
 import { momentoMovimiento, movimientosDe, serieDiaria, sumaMovs } from "../lib/derive";
 import { entero, etiquetaTalla, fechaLarga, hoyISO, norm, nombreProducto, partirMovimiento, sumarDias, titulo } from "../lib/format";
 import type { Movimiento } from "../lib/types";
@@ -40,7 +40,6 @@ export function Movimientos({ todos, datos, editor, pedirAnular, abrirRegistro, 
   const [limite, setLimite] = useState(PAGINA);
   const [conAnulados, setConAnulados] = useState(false);
   const [foto, setFoto] = useState<Movimiento | null>(null);
-  const [verGrafico, setVerGrafico] = useState(false);
 
   const empresaDe = useMemo(() => new Map(todos.stock.map((s) => [s.codigo, s.empresa])), [todos.stock]);
   const todosMovs = useMemo(() => movimientosDe(datos, true), [datos]);
@@ -80,9 +79,55 @@ export function Movimientos({ todos, datos, editor, pedirAnular, abrirRegistro, 
     return grupos;
   }, [dibujados, limite]);
 
+  const resumen = [
+    { etiqueta: "Entraron", valor: `+${entero(tot.entradas)}`, nota: "unidades compradas o repuestas", icono: <ArrowDownToLine className="size-4" />, tono: "" },
+    { etiqueta: "Salieron", valor: tot.salidas ? `−${entero(tot.salidas)}` : "0", nota: "unidades vendidas o entregadas", icono: <ArrowUpFromLine className="size-4" />, tono: "text-red" },
+    {
+      etiqueta: "Diferencia",
+      valor: `${tot.neto > 0 ? "+" : tot.neto < 0 ? "−" : ""}${entero(Math.abs(tot.neto))}`,
+      nota: tot.neto === 0 ? "el almacén quedó igual" : tot.neto > 0 ? "el almacén ganó unidades" : "el almacén perdió unidades",
+      icono: <Activity className="size-4" />,
+      tono: "",
+    },
+  ];
+
   const fotoDe = foto ? partirMovimiento(foto.producto) : null;
   return (
     <div className="space-y-5">
+      {/* Los totales y el gráfico siguen a los filtros. Con el historial a medias, un total sería falso: no se muestran. */}
+      {!historialIncompleto && (
+        <>
+          <div className="grid grid-cols-1 gap-5 sm:grid-cols-3">
+            {resumen.map((s) => (
+              <Card key={s.etiqueta} className="p-5">
+                <div className="flex items-center justify-between text-faint">
+                  <Kicker>{s.etiqueta}</Kicker>
+                  {s.icono}
+                </div>
+                <p className={cn("display num mt-3 text-4xl font-semibold leading-none", s.tono)}>{s.valor}</p>
+                <p className="mt-2.5 text-[12.5px] text-muted">{s.nota}</p>
+              </Card>
+            ))}
+          </div>
+
+          <Card className="p-6">
+            <Kicker>Evolución</Kicker>
+            <h2 className="display mt-1 text-lg font-semibold">Movimiento por día</h2>
+            <div className="mt-4">
+              {hayDatos ? (
+                <MovChart serie={serie} alto={220} />
+              ) : (
+                <Vacio
+                  icono={<Activity className="size-5" />}
+                  titulo="No hay movimientos en este periodo"
+                  texto="Prueba con un periodo más largo o registra un movimiento."
+                />
+              )}
+            </div>
+          </Card>
+        </>
+      )}
+
       <Card className="flex flex-col gap-4 p-4 sm:p-5">
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex h-11 min-w-[220px] flex-1 items-center gap-3 rounded-xl border border-line bg-ground/60 px-3.5 focus-within:border-ink focus-within:bg-surface">
@@ -129,32 +174,6 @@ export function Movimientos({ todos, datos, editor, pedirAnular, abrirRegistro, 
           Los movimientos no alcanzaron a descargarse antes de perder la señal, así que esta lista está incompleta. Se completa sola cuando vuelva la conexión.
         </p>
       )}
-
-      {/* Los totales siguen a los filtros y el gráfico se abre solo si se pide. Con el historial a medias, un total sería falso. */}
-      {!historialIncompleto && <Card className="p-4 sm:p-5">
-        <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-[13.5px]">
-          <span>
-            Entraron <b className="num">+{entero(tot.entradas)}</b>
-          </span>
-          <span>
-            Salieron <b className="num text-red">{tot.salidas ? `−${entero(tot.salidas)}` : "0"}</b>
-          </span>
-          <span className="text-muted">
-            {tot.neto === 0 ? "El almacén quedó igual" : tot.neto > 0 ? `El almacén ganó ${entero(tot.neto)} unidades` : `El almacén perdió ${entero(-tot.neto)} unidades`}
-          </span>
-          {hayDatos && (
-            <button type="button" onClick={() => setVerGrafico((v) => !v)} aria-expanded={verGrafico} className="ml-auto text-[13px] font-semibold text-ink underline decoration-line underline-offset-4 hover:decoration-ink">
-              {verGrafico ? "Ocultar gráfico" : "Ver gráfico por día"}
-            </button>
-          )}
-        </div>
-        {hayDatos && verGrafico && (
-          <div className="mt-4">
-            <p className="mb-2 text-[12.5px] text-muted">Movimiento por día{dias === 0 ? ", últimos 90 días" : ""}</p>
-            <MovChart serie={serie} alto={220} />
-          </div>
-        )}
-      </Card>}
 
       {historialIncompleto && dibujados.length === 0 ? null : dibujados.length === 0 ? (
         <Card>

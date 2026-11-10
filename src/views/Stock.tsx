@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { ArrowDown, ArrowUp, ChevronsUpDown, LayoutGrid, List, Package, Plus, Search } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronsUpDown, LayoutGrid, List, Package, PackagePlus, Plus, Search } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Card, Chip, EstadoBadge, Tabla, Vacio, td, th } from "../components/ui";
 import { agruparProductos, ESTADO_TEXTO, estadoDe, rangoTalla, resumir } from "../lib/derive";
@@ -38,7 +38,7 @@ function Cabecera({ col, children, derecha, orden, alOrdenar }: { col: Col; chil
   );
 }
 
-export function Stock({ datos, minimo, abrirProducto, filtroEstado, setFiltroEstado, editor, abrirNuevoProducto, abrirAsistente, abrirPedidos, pedidosPendientes }: VistaProps) {
+export function Stock({ datos, minimo, abrirProducto, filtroEstado, setFiltroEstado, editor, abrirRegistro, abrirNuevoProducto, abrirAsistente, abrirPedidos, pedidosPendientes }: VistaProps) {
   const [q, setQ] = useState("");
   const [modo, setModo] = useState<"productos" | "lista">("productos");
   const [orden, setOrden] = useState<{ col: Col; asc: boolean }>({ col: "producto", asc: true });
@@ -94,19 +94,34 @@ export function Stock({ datos, minimo, abrirProducto, filtroEstado, setFiltroEst
   return (
     <div className="space-y-5">
       {editor && (
-        <button
-          type="button"
-          onClick={abrirNuevoProducto}
-          className="flex w-full items-center gap-3.5 rounded-2xl border border-line bg-surface p-4 text-left shadow-card transition hover:border-faint active:scale-[0.99] sm:w-auto sm:min-w-[22rem]"
-        >
-          <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-ground">
-            <Plus className="size-5" />
-          </span>
-          <span>
-            <span className="block text-[14.5px] font-semibold">Producto nuevo</span>
-            <span className="block text-[12px] text-muted">Con sus tallas y cantidades</span>
-          </span>
-        </button>
+        <div className="grid grid-cols-1 gap-3 min-[480px]:grid-cols-2">
+          <button
+            type="button"
+            onClick={abrirRegistro}
+            className="flex items-center gap-3.5 rounded-2xl bg-ink p-4 text-left text-white shadow-card transition active:scale-[0.99]"
+          >
+            <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-white/12">
+              <PackagePlus className="size-5" />
+            </span>
+            <span>
+              <span className="block text-[14.5px] font-semibold">Agregar o sacar stock</span>
+              <span className="block text-[12px] text-white/70">Entradas y salidas en pocos toques</span>
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={abrirNuevoProducto}
+            className="flex items-center gap-3.5 rounded-2xl border border-line bg-surface p-4 text-left shadow-card transition hover:border-faint active:scale-[0.99]"
+          >
+            <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-ground">
+              <Plus className="size-5" />
+            </span>
+            <span>
+              <span className="block text-[14.5px] font-semibold">Producto nuevo</span>
+              <span className="block text-[12px] text-muted">Con sus tallas y cantidades</span>
+            </span>
+          </button>
+        </div>
       )}
       {editor && (r.bajo > 0 || pedidosPendientes > 0) && (
         <div className="flex flex-wrap gap-2">
